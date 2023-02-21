@@ -1,0 +1,317 @@
+---
+title: "Polynomial Regression"
+author: "Jeffrey Strickland"
+date: "8/7/2022"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 200)
+```
+## The Problem
+The solar zenith ($\theta_{sz}$) used for normalization was defined in the following criteria:
+$\theta_{sz}$ can be modelled for any date and location, and the difference between the observed $\theta_{sz}$ and $\theta_{sz}$ used for normalization is minimized [1]. According to the above criteria, there are two ways to define solar zenith ($\theta_{sz}$), namely defining $\theta_{sz}$ with respect to the scene acquisition center latitude or defining $\theta_{sz}$ with respect to the scene acquisition center latitude and scene acquisition time. A latitudinally fixed $\theta_{sz}$ was defined by a degree-six polynomial fitted on the basis of Landsat-8 data to retrieve constant latitudinal $\theta_{sz}$, using latitude as an input variable for the combined Landsat-8 and Sentinel-2A/2B reflectance data [2].
+
+Here, we are only concerned with making some sense out of a more basic dataset using polynomial regression and the Landsat-8 data (the Sentinal-2a/2b data is not easily accessible). Also, we want to use only daylight records. Also, we want to use only daylight records and positive sun azimuth[1].
+
+## About the Data
+### Satellite Remote Sensing Configurations
+Both Landsat-8 and Sentinel-2A/2B were launched into polar sun-synchronous orbits. Landsat-8 has an altitude of 705 km and an incline of $98.22^{o}$. The scanning angle for Landsat-8 is $\pm7.5^{o}$ and the swath width is 185 km. Landsat-8 revisits the same location every 16 days and crosses the equator at 10:00 $\pm$ 15 min [3]. The Sentinel-2A and Sentinel 2B satellites orbit at an altitude of 786 km and have an incline of $98.62^{o}$. The scanning angle for both the satellites is $\pm10.3^{o}$ and the swath width is 290 km. Both sensors revisit the same location every 10 days, giving a combined revisit interval of five days. Sentinel-2 has an equatorial crossing time of 10:30.
+
+### Global $\theta\_{sz}$ Metadata Records for Landsat-8 and Sentinel-2A/2B
+The following information in each Landsat-8 metadata record was used: “sceneStart,” “sceneStop,” “sunEle,” “$ce_{x}$,” and “$ce_{y}$.” The scene center acquisition time (Act) for each record was computed as the average of the “sceneStart” and “sceneStop” times, and the scene center qsz was derived as $90^{o}$—“sunEle.” The scene center latitude (Lat) and scene center longitude (Lon) coordinates were defined as “$ce_{x}$” and “$ce_{y}$”, respectively, in each metadata record.
+
+## Import Required Libraries
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(dplyr)
+theme_set(theme_classic())
+```
+
+## Data Preprocessing
+To start, we'll load the data from the U.S. Geological Survey (USGS) website at https://landsat.usgs.gov/landsat/metadata_service/bulk_metadata_files/LANDSAT_OT_C2_L1.csv.gz.
+Then, we'll perform several data prepossessing tasks.
+ 
+### Load and View the Variable Names
+We know that well not use all 58 features in the dataset, so let's print out the variable names and use the corresponding column numbers to define a subset of features.
+
+```{r}
+set.seed(123)
+file<-"C:\\Users\\jeff\\Documents\\Data\\LANDSAT_OT_C2_L1.csv"
+sat_dat <- read.csv(file)
+nrow(sat_dat)
+```
+### Filter Daylight Records
+Now, we set the day-night flag to "Day" and the sun azimuth to non-negative values.
+
+```{r}
+sat_dat <- sat_dat[sat_dat$Day.Night.Indicator=="DAY", ]
+sat_dat <- sat_dat[sat_dat$Sun.Azimuth.L0RA>0, ]
+```
+
+### Random Sample
+Now, we want to create a random subset of the data to train and cross-validate our model. Since there are 2,292,754 rows of data, we'll only need a small portion of them.
+
+```{r}
+samp <- sat_dat[sample(nrow(sat_dat), size=50000), ]
+head(samp,6)
+names(samp)
+```
+So, there are two things we can take from this. First, we can shorten the variable names considerably. Second, we are only interested in features that can affect the response, and these are ones that provide physical, orbital data.
+
+### Down-Select Features 
+Now, we want to create a subset where the Day.Night.Indicator is "Day", and then select the features we desire: [9] WRS.Path, [10] WRS.Row, [11] Nadir.Off.Nadir, [12] Roll.Angle, [16] Start.Time, [17] Stop.Time, [19] Day.Night.Indicator, [23] Geometric.RMSE.Model.X, [24] Geometric.RMSE.Model.Y, [27] Sun.Elevation.L0RA, [28] Sun.Azimuth.L0RA, [32] Satellite, [42] Ellipsoid, [50] Scene.Center.Latitude, and [51] Scene.Center.Longitude. We also want to determine the number of records or rows in the full dataset.
+
+```{r}
+samp1<-samp[c(9,10,11,12,16,17,19,23,24,27,28,32,42,50,51)]
+names(samp1)
+```
+
+### Shorten Variable Names
+Shortening some variable names will simply our work ahead. We'll also get a record count (number of rows) to use in choosing a random sample from the data.
+
+```{r}
+library(data.table)
+setnames(samp1, old = c('Sun.Azimuth.L0RA','Geometric.RMSE.Model.X', 'Geometric.RMSE.Model.Y','Scene.Center.Latitude','Scene.Center.Longitude'), new = c('sun_az','geo_rmse_mod_x','geo_rmse_mod_y','lat_cen','lon_cen'))
+nrow(samp1)
+```
+
+### Write Data to File
+
+```{r}
+setwd("C:/Users/jeff/Documents/Data")
+write_csv(samp1,"sun.csv")
+```
+
+### Split the Data into Training and Test Sets
+Next, we split the 50,000 records into two subsets, on to train the model and one to test or cross-validate the model.
+
+```{r}
+training.samples <- samp1$sun_az %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- samp1[training.samples, ]
+test.data <- samp1[-training.samples, ]
+```
+
+### Impute Missing Values
+The polynomial regression algorithm will not work with missing values, NULLs, or NAs, so we'll need to impute the missing values in the features we intend to use. Since they are all numeric values, we use the mean values to replace the missing one. We must do this for both the train and test sets.
+
+```{r}
+train.data$lat_cen[is.na(train.data$lat_cen)] <- mean(train.data$lat_cen, na.rm = TRUE)
+train.data$lon_cen[is.na(train.data$lon_cen)] <- mean(train.data$lon_cen, na.rm = TRUE)
+train.data$sun_az[is.na(train.data$sun_az)] <- mean(train.data$sun_az, na.rm = TRUE)
+
+test.data$lat_cen[is.na(test.data$lat_cen)] <- mean(test.data$lat_cen, na.rm = TRUE)
+test.data$lon_cen[is.na(test.data$lon_cen)] <- mean(test.data$lon_cen, na.rm = TRUE)
+test.data$sun_az[is.na(test.data$sun_az)] <- mean(test.data$sun_az, na.rm = TRUE)
+```
+
+## Build the Polynomial Regression Model
+Based our apriori knowledge from [2], a sixth-order polynomial has been used to fit this type of data, so we'll use that here. The model is defined as:
+
+$y = p_{0}x^{6} + p_{1}x^{5} + p_{2}x^{4} + p_{3}x^{3} + p_{4}x^{2} + p_{5}x + p_{6}$
+
+```{r}
+model <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=6), data = train.data)
+```
+
+### Make Predictions
+Now, we use the test data to perform cross-validation.
+```{r}
+predictions <- model %>% predict(test.data)
+```
+
+### Measures of Model Performance
+Next, we calculate the Root Mean Square Error (RMSE) and $R^{2}$. AIC is the Akaike's Information Criterion. This function is generic; method functions can be written to handle specific classes of objects. Classes which have methods for this function include: "glm", "lm", "nls" and "Arima". 
+
+```{r}
+modelPerfomance = data.frame(
+  RMSE = RMSE(predictions, test.data$sun_az),
+  R2 = R2(predictions, test.data$sun_az)
+)
+```
+
+### Print Model Performance Results
+The performance data shows us that 82% of the Response is explained by the features. It also show a relatively small value for RMSE. Both are indicators of a good fit. As an option, we want to repress scientific notation and reduce the number of significant digits of the outcome.
+
+```{r}
+options(scipen = 100, digits = 8)
+print(modelPerfomance)
+```
+
+### Print Model Summary
+A model summary gives us the model description, coefficient values, coefficient significance, and some model performance measures, before cross-validation (i.e., the trained model).
+
+```{r}
+summary(model)
+```
+
+### Print Model Performance
+The model performance here has already been calculated above when we performed cross-validation. The results tell us that 88% of the Response is explained by the features in the model. It also tells use the RMSE value is relatively low. 
+
+```{r}
+print(modelPerfomance)
+```
+
+### Plot Actual Data with 6th Order Polynomial Fit
+
+```{r}
+ggplot(test.data, aes(x=lat_cen, y=sun_az)) + 
+  geom_point(col=3) +
+  stat_smooth(method='lm', formula = y ~ poly(x,6), size = 2) + 
+  xlab('Scene.Center.Latitude') +
+  ylab('Sun.Azimuth.L0RA') +
+  labs(title="Landsat Collection 2: April 2013 - Present")
+
+ggplot(test.data, aes(x=lon_cen, y=sun_az)) + 
+  geom_point(col=3) +
+  stat_smooth(method='lm', formula = y ~ poly(x,6), size = 2) + 
+  xlab('Scene.Center.Longitude') +
+  ylab('Sun.Azimuth.L0RA') +
+  labs(title="Landsat Collection 2: April 2013 - Present")
+```
+
+## Multiple Model Comparison
+Suppose we do not have the apriori knowledge that this data can be modeled with a sixth-order polynomial regression model, but we know that the type of model may be a good fit, just not the order. One way to find the best model is to build multiple models, evaluate each model's performance, and then compare them.
+
+```{r}
+model_3 <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=3), data = train.data)
+model_4 <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=4), data = train.data)
+model_5 <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=5), data = train.data)
+model_6 <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=6), data = train.data)
+```
+
+### Make Predictions
+We'll need predictions for each model.
+
+```{r}
+predict_3 <- model_3 %>% predict(test.data)
+predict_4 <- model_4 %>% predict(test.data)
+predict_5 <- model_5 %>% predict(test.data)
+predict_6 <- model_6 %>% predict(test.data)
+```
+
+### Model Performance
+Now, we need to calculate the performance measures.
+```{r}
+modelPerfomance3 = data.frame(
+  RMSE_3 = RMSE(predict_3, test.data$sun_az),
+  R2_3 = R2(predict_3, test.data$sun_az)
+)
+modelPerfomance4 = data.frame(
+  RMSE_4 = RMSE(predict_4, test.data$sun_az),
+  R2_4 = R2(predict_4, test.data$sun_az)
+)
+modelPerfomance5 = data.frame(
+  RMSE_5 = RMSE(predict_5, test.data$sun_az),
+  R2_5 = R2(predict_5, test.data$sun_az)
+)
+modelPerfomance6 = data.frame(
+  RMSE_6 = RMSE(predict_6, test.data$sun_az),
+  R2_6 = R2(predict_6, test.data$sun_az)
+)
+```
+
+### Print Model Performance
+Next, we print the performance measures results, and compare them. So, the sixth-order model is the best, but if we continued increasing the order, we wold not get a good return on our investment.
+```{r}
+options(scipen = 100, digits = 8)
+print(modelPerfomance3)
+print(modelPerfomance4)
+print(modelPerfomance5)
+print(modelPerfomance6)
+```
+
+### Using for Loop
+Now, there are better ways to compare multiple models, and one of the is to use a for-loop as we do here. When we run this loop, the output will be four sets of performance measures in descending order, which we can compare.
+
+```{r}
+for (val in 3: 6)
+{
+  # statement
+  model<-lm(sun_az ~ polym(lat_cen, lon_cen, degree=val), data = train.data)
+  predict <- model %>% predict(test.data)
+  modelPerfomance.val = data.frame(
+    AIC(model),
+    RMSE = RMSE(predict, test.data$sun_az),
+    R2 = R2(predict, test.data$sun_az)
+  )
+  print(modelPerfomance.val)
+}
+```
+
+These results also show that the sixth-order polynomial regression is the best model.
+
+```{r}
+par(mar=c(4,4,2,1))
+boxplot(train.data[c('sun_az','lat_cen','lon_cen')],las=1, lwd=2, col=6)
+```
+
+
+```{r}
+summary(ols <- lm(sun_az ~ polym(lat_cen, lon_cen, degree=6), data = train.data))
+
+opar <- par(mfrow = c(2,2), oma = c(0, 0, 1.1, 0))
+plot(ols, las = 1)
+par(opar)
+```
+
+
+```{r}
+require(foreign)
+require(MASS)
+train.data[c(1361239,1706888,1545948), 1:2]
+```
+
+
+```{r}
+d1 <- cooks.distance(ols)
+r <- stdres(ols)
+a <- cbind(train.data, d1, r)
+a[d1 > 4/87, ]
+```
+
+
+```{r}
+rabs <- abs(r)
+a <- cbind(train.data, d1, r, rabs)
+asorted <- a[order(-rabs), ]
+asorted[1:10, ]
+```
+
+
+```{r}
+summary(rr.huber <- rlm(sun_az ~ polym(lat_cen, lon_cen, degree=6), data = train.data))
+```
+
+
+```{r}
+hweights <- data.frame(sun_az = train.data$sun_az, resid = rr.huber$resid, weight = rr.huber$w)
+hweights2 <- hweights[order(rr.huber$w), ]
+hweights2[1:15, ]
+```
+
+
+```{r}
+rr.bisquare <- rlm(sun_az ~ polym(lat_cen, lon_cen, degree=6), data = train.data, psi = psi.bisquare)
+summary(rr.bisquare)
+```
+
+
+```{r}
+biweights <- data.frame(sun_az  = train.data$sun_az , resid = rr.bisquare$resid, weight = rr.bisquare$w)
+biweights2 <- biweights[order(rr.bisquare$w), ]
+biweights2[1:15, ]
+```
+
+## Works Cited
+
+[1] Zhang, H.K.; Roy, D.P.; Kovalskyy, V. *Optimal Solar Geometry Definition for Global Long-Term Landsat Time-Series Bidirectional Reflectance Normalization*. IEEE Trans. Geosci. Remote Sens. 2016, 54(3), 1410–1418.
+
+[2] Li, J.; Chen, B. *Optimal Solar Zenith Angle Definition for Combined Landsat-8 and Sentinel-2A/2B Data Angular Normalization Using Machine Learning Methods*. Remote Sens. 2021, 13(13), 2598. https://doi.org/10.3390/rs13132598
+
+[3] Irons, J.R.; Dwyer, J.L.; Barsi, J.A. *The next Landsat satellite: The Landsat data continuity mission*. Remote Sens. Environ. 2012, 122,
+11–21.

@@ -1,0 +1,316 @@
+---
+title: "nlme Example"
+author: "Jeffrey Strickland"
+date: "2022-11-15"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## 3.1 The nlme package
+
+`nlme` is a package for fitting and comparing linear and nonlinear mixed effects models. It let’s you specify variance-covariance structures for the residuals and is well suited for repeated measure or longitudinal designs.
+
+### 3.1.1. Similar packages
+
+One similar package is `lme4`. It allows you to fit outcomes whose distribution is not Gaussian and crossed random effects. Some pros include that it stores data more efficiently due to the use of sparse matrices and it works well with clustered data sets.
+
+### 3.1.2. Examples of functions:
+
+1. `anova.lme` - This compares the likelihoods of fitted models. It will produce an AIC and BIC and can be used to compare null and predictive models or models with different predictors and/or interactions.
+
+`anova.lme(object, ..., test=TRUE, type = "sequential/marginal", adjustSigma, Terms, L, verbose)`
+
+2. `corMatrix` - A function to generate the correlation matrix of an object/dataset.
+
+`corMatrix(object, ...)`
+
+3. `gapply` - Applies a function to a distinct set of rows in a data frame. - To use this, the rows must first be identified using the `groups` function
+
+`gapply(object, which, FUN, form, level, groups, .)`
+
+
+4. `lme` - We will learn about this function extensively in the following sections
+
+### 3.1.3 Using the nlme package
+
+Load the package (and other relevant packages)
+
+```{r}
+library(ggplot2)
+library(nlme)
+library(dplyr)
+library(knitr)
+```
+
+##  3.2 The lme function
+
+This generic function fits a linear mixed-effects model in the formulation described in Laird and Ware (1982) but allowing for nested random effects. The within-group errors are allowed to be correlated and/or have unequal variances.
+
+###3.2.1 Some important considerations
+
+Need repeated measures from a single subject The data may be longitudinal, but they also may not.
+
+Can account for correlations within individuals within the random effects
+
+Uses maximum likelihood estimates
+
+### 3.2.2 The arguments for this function
+
+`lme(model, data, fixed, random, groups, start, correlation, weights, subset, method, na.action, naPattern, control, verbose)`
+
+
+## 3.3. Example: Does the number of practices impact a Gaurdian's performance on levels of certification?
+
+#### creating a data set 
+
+**Subs** are groupings of cohorts of Guardians undergoing certification training.
+
+```{r}
+set.seed(1232)
+Subs <- rep(c(seq(1:10)), 4)
+```
+
+**Lessons** are lesson numbers at which the training is evaluated
+
+```{r}
+set.seed(1232)
+Lesson <- c(rep(c(1), 10), rep(c(5), 10), rep(c(10), 10), rep(c(15), 10))
+```
+
+**Practices** are the number of practical exercises perform for a lesson block being evaluated
+
+```{r}
+set.seed(1232)
+Practices <- c(rep(c(3), 10), 2, 3, 2, 1, 2, 3, 2, 3, 2, 3, 2, 2, 2 ,2, 3, 3, 2, 2, 1, 2, 3, 1, 2, 2, 1, 1, 2, 1, 2, 1 )
+```
+
+**PracFactor** is the factorized Pratices
+
+```{r}
+set.seed(1232)
+PracFactor <- as.factor(Practices)
+```
+
+Let's assume that Guardians' performance will get better with time. We altered the possible sampling distributions to reflect this. 
+
+```{r}
+set.seed(1232)
+scores <- c(runif(10, 1, 7), runif(10, 8, 15), runif(10, 16, 22), runif(10, 23, 30))
+```
+
+**Dataset** is the set where we stored the generated data
+
+```{r}
+dataset <- data.frame(Subs, Lesson, Practices, scores, PracFactor)
+# save the set
+save(dataset,file="C:/Users/jeff/Documents/Data/cert.RData")
+```
+
+#### Reload the dataset
+
+```{r}
+load("C:/Users/jeff/Documents/Data/cert.RData")
+```
+
+Data should be set up in long format and look similar to this.
+
+```{r}
+print(dataset)
+```
+
+### 3.3.1. The experimental design.
+
+This is a 4x3 within subject design. Guardians are assessed at 4 time points - 1 lesson, 5 lessons, 10 lessons, and 15 lessons. There are 3 levels of practices - 1, 2, or 3 practices per evaluation/lesson block.
+
+### 3.3.2. Data analysis
+
+We will run a conditional growth model because we are including predictors. Subsequent fixed and random effects are now “conditioned on” the predictors (progress and number of practices).
+
+#Conditional growth model
+
+```{r}
+set.seed(1232)
+test_certs <- lme(scores ~ Lesson * Practices, random = ~ Lesson | Subs, data=dataset)
+```
+
+#Because we are using a random sample, may need to rerun the scores several times for this piece of code to run effectively
+
+**lme(model, random, data)**
+
+**model** - scores ~ Month * Naps
+
+We expect scores will be influenced by prograss (number of lesson blocks) and the number of Prectices they take per day. There may be an interaction between these predictors.
+
+**random** - random = ~ Lesson | Subs
+
+Random error comes from the fact that this is a within subjects design. The same Guardians are assessed at 1 month, 5 months, 10 months, and 15 months.
+
+**data** - data=dataset
+
+Using the data set we created previously.
+
+### 3.3.3. Displaying our results
+
+```{r}
+test_certs
+```
+
+We can move the results to a nicer table using the summary function
+
+#### summarize an lme object - our solution
+
+```{r}
+tut <- summary(test_certs)
+tabl = tut$tTable 
+tabl 
+```
+
+From this analysis, we would conclude that there is a main effect of age, Guardians' performance improved with progree, but there is no effect of number of preactices It was trending in the correct direction as the only negative slope.
+
+### 3.3.4. Graphing our results
+
+```{r}
+library(ggplot2)
+plot<- ggplot(dataset, aes(x=Lesson, y=scores,  color=PracFactor, shape = PracFactor, group = Subs), xlim(1, 15), ylim(0, 25), xlab(Month) ) + 
+  geom_point(size = 2.5)+
+  geom_line(color="navy", lwd = 0.75, lty = 3)
+
+plot + scale_x_continuous(name="Progress (in lessons)", limits=c(1, 15), breaks =c(1,5,10,15)) +
+  scale_y_continuous(name="Scores", limits=c(0, 30))
+```
+
+This kind of graph allows us to see the developmental trajectory of individual Guarrdians. It highlights the fact that there are 2 developmental trends occuring here- Guardians’ performance on the assessment is improving with time and the average number of practices they take is decreasing with time.
+
+
+## 3.4. Continuing our example: Single main effect versus two main effects or an interaction
+
+When making the original data set, I intentionally biased the data to show a developmental curve by increasing the sampling distribution for each progress range. I could do something similar to bias our data to support the impact of taking fewer practices.
+
+#### Create a new data set 
+
+```{r}
+Subs <- rep(c(seq(1:10)), 4)
+
+Lesson <- c(rep(c(1), 10), rep(c(5), 10), rep(c(10), 10), rep(c(15), 10))
+
+Practices <- c(rep(c(3), 10), 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 3, 3, 3 ,2,2,  2, 2,2,1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1)
+PracFactor <- as.factor(Practices)
+
+secondscores <- c(runif(10, 1, 10), runif(5, 5, 10),runif(5, 9, 17), runif(3, 10, 15), runif(5, 14, 22), runif(2, 20, 25), runif(5, 18, 23), runif(4,22, 27), runif(1, 27, 30) )
+
+seconddataset <- data.frame(Subs, Lesson, Practices, secondscores, PracFactor)
+
+save(seconddataset, file="C:/Users/jeff/Documents/Data/cert2.RData")
+
+load("C:/Users/jeff/Documents/Data/cert2.Rdata")
+print(seconddataset)
+```
+
+
+### 3.4.1 Did the manipulation work?
+
+```{r}  
+  #Summary stats from our first dataset
+  demos <- dataset %>%
+  group_by(Lesson, Practices) %>%
+  summarise(mean_score = mean(scores, na.rm=TRUE))
+```
+
+
+#### Summary stats from our second dataset
+
+```{r}
+seconddemos <- seconddataset %>%
+  group_by(Lesson, Practices) %>%
+  summarise(mean_secondscore = mean(secondscores, na.rm=TRUE))
+```
+
+
+```{r}
+print(paste("Demos Mean Score = ", demos))
+print(paste("2nd Demos score = ",seconddemos))
+```
+
+It may or may not because we’re still drawing a random sample, but the trend should be clearer than during the first example.
+
+#### Now run the analysis again
+
+#### Run the analysis again 
+
+```{r}
+set.seed(1234)
+second_cert <- lme(secondscores ~ Lesson * Practices, 
+                   random = ~ Lesson | Subs, data=seconddataset)
+second_cert
+```
+
+#### Create a table 
+
+```{r}
+secondtut<- summary(second_cert)
+secondtabl = secondtut$tTable 
+secondtabl 
+```
+
+#### Graph the results 
+
+```{r}
+secondplot<-
+  ggplot2::ggplot(seconddataset, aes(x=Lesson, y=secondscores,  color=PracFactor, shape = PracFactor, group=Subs), xlim(1, 15), ylim(0, 25), xlab(Lesson) ) + 
+  geom_point(size = 2.5)+
+  geom_line( color="magenta", lwd = .75, lty = 3)
+
+secondplot + scale_x_continuous(name="Progress (in lessons)", limits=c(1, 15), breaks = Lesson) +
+  scale_y_continuous(name="Scores", limits=c(0, 30))
+```
+
+## 3.5 Plot the residuals
+
+We can check the residuals to judge the fit of our models. The second tutorial should fit better because we set the data up that way.
+
+```{r}
+plot(test_certs)
+plot(second_cert)
+```
+
+Remember, for a well fitting regression, we want the plot of our residuals to meet the following criteria: (1) they’re pretty symmetrically distributed (2) they’re relatively small and (3) they don’t follow a clear pattern
+
+The second plot seems to meet these qualifications.
+
+## 3.6 Writing up our results
+
+```{r}
+summary(second_cert)
+```
+
+
+A linear mixed effects model and conditional growth curve analysis was used to analyze Guardians’ scores at 1, 5, 10, and 15 lessons of progress. Their scores were modeled with fixed effects of lessons and practices (1, 2, or 3) and random error to account for the within subjects design. There was a significant effect of Lesson: scores increased with lesson progress (Estimate= , SE= , p= ).
+
+There was also a significant effect of Practiecs with fewer p[ractices] associated with better scores over time (Estimate= , SE= , p= ).
+
+```{r}
+Est2 <- secondtabl[2,1]
+SE_val2 <- secondtabl[2,2]
+p_val2 <-secondtabl[2,5]
+ 
+Est3 <- secondtabl[3,1]
+SE_val3 <- secondtabl[3,2]
+p_val3 <- secondtabl[3,5]
+ 
+Est4 <- secondtabl[4,1]
+SE_val4 <- secondtabl[4,2]
+p_val4 <- secondtabl[4,5]
+```
+
+
+
+
+```{r}
+print(paste("| Variable        | Estimate   | SE       | p-value   |"))     
+print(paste("| Lesson          |",round(Est2,6) ,"  |", round(SE_val2,6),"|", round(p_val2,6)," |"))
+print(paste("| Practices       |",round(Est3,6) ," |", round(SE_val3,6),"|", round(p_val3,6),"|"))
+print(paste("| Lesson:Practices|",round(Est4,6) ," |", round(SE_val4,6),"|", round(p_val4,6),"|"))
+```

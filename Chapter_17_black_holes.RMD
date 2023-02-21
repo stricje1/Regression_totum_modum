@@ -1,0 +1,605 @@
+---
+title: "Untitled"
+author: "Jeffrey Strickland"
+date: "2022-11-05"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## Load Required CRAN Packages
+
+```{r}
+library(readr)      # for reading and writing files (.csv) in R
+library(dplyr)      # for the grammar of data manipulation (i.e., %>%, the pipe operator)
+library(superml)    # provides a scikit-learn's fit, predict interface to train machine learning models in R
+library(car)        # functions to accompany [1]
+library(ggplot2)    # system for 'declaratively' creating graphics [2]
+library(quantmod)   # Specify, build, trade, and analyse quantitative financial trading strategies
+library(neuralnet)  # Training of neural networks using backpropagation
+library(nnet)       # for feed-forward neural networks with a single hidden layer [3]
+require(plyr)       # for the split-apply-combine paradigm for R# [4]
+library(caret)      # for miscellaneous functions for training and plotting classification and regression models
+```
+
+
+```{r}
+df1 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\S50014\\ASTRO_IMAGING_HST_OPTICAL3.csv")
+df2 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\H1821\\ASTRO_IMAGING_HST_OPTICAL5.csv")
+df3 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\OJ287\\ASTRO_IMAGING_HST_OPTICAL6.csv")
+df4 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\NGC1600\\ASTRO_IMAGING_HST_OPTICAL7.csv")
+df5 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\SOMBRERO\\ASTRO_IMAGING_HST_OPTICAL8.csv")
+df6 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\IC1101\\ASTRO_IMAGING_HST_UV9.csv")
+df7 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\MARKARIAN\\ASTRO_IMAGING_HST_OPTICAL10.csv")
+df8 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\3C273\\ASTRO_IMAGING_HST_OPTICAL11.csv")
+df9 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\NGC5548\\ASTRO_IMAGING_HST_OPTICAL12.csv")
+df10 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\CENTAURUS-A\\ASTRO_IMAGING_HST_OPTICAL13.csv")
+df11 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\NGC4151\\ASTRO_IMAGING_HST_OPTICAL14.csv")
+df12 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\MESSIER60\\ASTRO_IMAGING_HST_OPTICAL15.csv")
+df13 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\MESSIER87\\ASTRO_IMAGING_HST_OPTICAL16.csv")
+df14 <- read_csv("C:\\Users\\jeff\\Documents\\Data\\NEAR THE BLACK HOLE\\SAGITTARIUS-A\\ASTRO_IMAGING_HST_OPTICAL17.csv")
+```
+
+## Combine Files by Appending Rows
+We use the rbind (or row binding_ function to append rows of data to existing data). We also show the names of the variables and print out a few rows of the resulting data set.
+
+```{r}
+mdf_mod<-rbind(df1,df2,df3,df4,df5,df6,df7,df8,df9,df10,df11,df12,df13,df14)
+write_csv(mdf_mod,"black_holes.csv")
+```
+
+
+```{r}
+mdf_mod <- read_csv("C:/Users/jeff/Documents/R/black_holes.csv")
+names(mdf_mod)
+mdf_mod1 <- mdf_mod[,-1:-2]
+print(mdf_mod1)
+names(mdf_mod1)
+```
+
+## Drop Irrelavant Columns 
+First, we define all the columns to be dropped. Then, we use the matching operator, %in% (x in y), to remove the specified columns.
+
+```{r}
+drop <- c("product_url","postcard_url", "observation_id" )
+
+mdf_mod = mdf_mod1[,!(names(mdf_mod1) %in% drop)]
+print(mdf_mod)
+```
+
+# Label Encoding
+Encodes categorical variables into integer values, because all machine learning models require the data to be encoded into numerical format. LabelEncoder(), from the superml-package takes a vector of character or factor values and encodes them into numeric.
+
+```{r}
+lbl = LabelEncoder$new()
+mdf_mod$target_name = lbl$fit_transform(mdf_mod$target_name)
+mdf_mod$instrument_name = lbl$fit_transform(mdf_mod$instrument_name)
+mdf_mod$collection = lbl$fit_transform(mdf_mod$collection)
+mdf_mod$filter = lbl$fit_transform(mdf_mod$filter)
+mdf_mod$observation_oid = lbl$fit_transform(mdf_mod$observation_oid)
+mdf_mod$stc_s = lbl$fit_transform(mdf_mod$stc_s)
+mdf_mod
+```
+
+Set the working directory and write our data to a comma separated (CSV) file.
+
+setwd("C:/Users/jeff/Documents/R")
+write_csv(mdf_mod,"mdf_bu.csv")
+
+## Transform Values to Numeric
+Now, we convert the entire dataset to numeric format and verify the outcome usin the apply-sapply functions. The apply() function returns a vector or array or list of values obtained by applying a function to margins of an array or matrix. The sapply()  function is a user-friendly version and wrapper of lapply. By default, it returns a vector, matrix or, if simplify = "array", an array if appropriate (by applying simplify2array())
+
+```{r}
+mdf_mod$start_time <- as.numeric(mdf_mod$start_time)
+mdf_mod$end_time <- as.numeric(mdf_mod$end_time)
+mdf_mod <- as.data.frame(apply(mdf_mod, 2, as.numeric))  # Convert all variable types to numeric
+sapply(mdf_mod, class) 
+
+summary(mdf_mod)
+```
+
+## Calculate Start and Stop Time Difference
+Here we write a simple expression to create a new variable called "timediff", for the difference between the start and end times of the epoch. We also generate a scatterplot of the timediff data.
+
+```{r}
+mdf_mod['timediff'] <- mdf_mod['end_time'] - mdf_mod['start_time']
+mdf_mod$timediff[is.na(mdf_mod$timediff)] <- mean(mdf_mod$timediff, na.rm = TRUE)
+plot(mdf_mod$timediff, col=4, lwd=2, pch=5, cex=2)
+
+mdfs <- mdf_mod[c("dec_deg","timediff")]
+plot(mdfs, col=4, lwd=3, pch=10, cex=1)
+```
+
+## Data Summary Statistics
+Now, we write a function to calculate the mean and the standard deviation for each group in the dataset.
+
+We also define the following
+* data : a data frame
+* varname : the name of a column containing the variable # to be summarized
+* groupnames : vector of column names to be used as grouping variables
+
+```{r}
+data_summary <- function(data, varname, groupnames){
+  require(plyr)   #the split-apply-combine paradigm for R
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE))
+  }
+  # Split data frame, apply function, and return results in a data frame
+  data_sum<-ddply(data, groupnames, .fun=summary_func, varname)
+  data_sum <- rename(data_sum, c("mean" = varname))
+  return(data_sum)
+}
+```
+
+
+Now let's calculate the summary statistics for the group target_name and feature.
+
+```{r}
+df2 <- data_summary(mdf_mod, varname="exposure_duration", 
+                    groupnames=c("target_name", "filter"))
+# Convert dose to a factor variable
+df2$filter=as.factor(df2$filter)
+head(df2,16)
+```
+
+## Generate Bar Graphs
+Here we'll build some bar graphs and assess the information they provide.
+
+```{r}
+
+x = mdf_mod['target_name']
+y = mdf_mod['filter']
+
+p<-ggplot(data = mdf_mod, aes(x = target_name, y = filter)) +
+  geom_bar(stat = "sum", fill = "steelblue")  
+p
+```
+
+```{r}
+mdf.mod <- mdf_mod %>% 
+ group_by(target_name)# %>%
+  summarise(n=sum(stc_s, na.rm=TRUE)) 
+```
+
+
+```{r}
+p <- mdf.mod %>%
+  ggplot(aes(x=target_name, y=filter, fill=filter))+
+  geom_col()
+p
+```
+
+
+
+```{r}
+p + coord_flip()
+```
+
+
+# Horizontal bar plot
+
+
+```{r}
+p <- mdf.mod %>%
+  ggplot(aes(x=target_name, y=filter, fill=instrument_name))+
+  geom_col()
+p
+```
+
+## Generate Boxplots
+Here we'll build some boxplots and analyze the information they provide.
+
+```{r}
+layout(matrix(c(1,2,1,2), 2, 2, byrow = TRUE))
+boxplot(mdf_mod$filter, col = "bisque", main = "Boxplot: Filter", horizontal = TRUE)
+
+boxplot(target_name~instrument_name ,data=mdf_mod, col= 4, main="Black Hole Data",
+        xlab="Instrument Name ", ylab="Target Name") 
+```
+
+
+## Generate a Heatmap
+Heatmaps are a method of representing data graphically where values are depicted by color, making it easy to visualize complex data and understand it at a glance. There are two prerequisite actions we need to perform before generating a heat map. The first one is to make all data numerical. We did this in an earlier step, since all machine learning models require the data to be encoded into numerical format. The second is to change the structure of the data from data frame to matrix. Once this is accomplished, we create the heatmap.
+
+```{r}
+#mdf_mod <- mdf_mod[,-7]
+#mdf_mod <- mdf_mod[,-9]
+#mdf_mod <- mdf_mod[,-9]
+mdf_mod  <- as.matrix(mdf_mod)
+corr <- cor(mdf_mod)
+par(oma=c(6,0,0,2))
+par(mar=c(2,0,0,2))
+heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+```
+
+
+```{r}
+ggstatsplot::ggcorrmat(
+  data = mdf_mod,
+  type = "parametric", # parametric for Pearson, nonparametric for Spearman's correlation
+  colors = c("darkred", "white", "steelblue") # change default colors
+)
+```
+
+
+
+```{r}
+library(caret)
+mdf_mod <- as.data.frame(mdf_mod)
+training.samples <- mdf_mod$target_name %>%
+  createDataPartition(p = 0.7, list = FALSE)
+train.data  <- mdf_mod[training.samples, ]
+test.data <- mdf_mod[-training.samples, ]
+```
+
+
+```{r}
+library(caret)
+training.samples <- mdf_mod$target_name %>%
+  createDataPartition(p = 0.8, list = FALSE) # train-test split
+train.data  <- mdf_mod[training.samples, ] # train
+test.data <- mdf_mod[-training.samples, ] # test
+
+y <- test.data["target_name"]
+X <- test.data[c(2,3,5,6,7,8,9,10)]
+mod_vars <- cbind(X,y)
+
+lm.fit <- lm(target_name ~ .,  data = train.data) #train the model
+lm_predict <- predict(lm.fit, newdata=test.data) # test the model
+summary(lm.fit)
+
+Y <- as.data.frame(y)
+df<-cbind(Y,lm_predict) #actual vs predicted
+df<-data.frame(df)
+
+plot(df, cex=2, lwd = 5, col = 3,               
+     main="Linear Predictors vs Actual")
+slp <- (test.data[nrow(df)-1,3]-test.data[1,3])/nrow(df)
+abline(a=-1.5, b=slp, lwd=2) # a=y-intercept, b=slope
+```
+
+
+```{r}
+library(tidyverse)
+library(haven)
+library(geepack)
+library(lme4)
+mdf_mod1 <- data.frame(matrix(ncol = 11, nrow = 87))
+colnames(mdf_mod1) <- c('ra_deg', 'dec_deg', 'target_name', 'collection', 'instrument_name', 'filter', 'start_time', 'exposure_duration', 'stc_s', 'end_time', 'timediff')
+mdf_mod1
+```
+
+
+```{r}
+mdf_mod1$ra_deg <- (mdf_mod$ra_deg - mean(mdf_mod$ra_deg))/sd(mdf_mod$ra_deg)
+mdf_mod1$dec_deg <- (mdf_mod$dec_deg - mean(mdf_mod$dec_deg))/sd(mdf_mod$dec_deg)         
+mdf_mod1$target_name <- (mdf_mod$target_name - mean(mdf_mod$target_name))/sd(mdf_mod$target_name)
+mdf_mod1$instrument_name <- (mdf_mod$instrument_name - mean(mdf_mod$instrument_name))/sd(mdf_mod$instrument_name)
+mdf_mod1$collection <- (mdf_mod$collection - mean(mdf_mod$collection))/sd(mdf_mod$collection)
+mdf_mod1$filter <- (mdf_mod$filter - mean(mdf_mod$filter))/sd(mdf_mod$filter)
+mdf_mod1$start_time <- (mdf_mod$start_time - mean(mdf_mod$start_time))/sd(mdf_mod$start_time)
+mdf_mod1$exposure_duration <- (mdf_mod$exposure_duration - mean(mdf_mod$exposure_duration))/sd(mdf_mod$exposure_duration)
+mdf_mod1$stc_s <- (mdf_mod$stc_s - mean(mdf_mod$stc_s))/sd(mdf_mod$stc_s)
+mdf_mod1$end_time <- (mdf_mod$end_time - mean(mdf_mod$end_time))/sd(mdf_mod$end_time)
+mdf_mod1$timediff <- (mdf_mod$timediff - mean(mdf_mod$timediff))/sd(mdf_mod$timediff)
+
+summary(mdf_mod1)
+```
+
+
+```{r}
+ggstatsplot::ggcorrmat(
+  data = mdf_mod1,
+  type = "parametric", # parametric for Pearson, nonparametric for Spearman's correlation
+  colors = c("darkred", "white", "steelblue") # change default colors
+)
+```
+
+# Linear Model
+
+```{r}
+lm.fit <- lm(target_name ~ .,  data = mdf_mod1) 
+lm_predict <- predict(lm.fit)
+summary(lm.fit)
+```
+
+# Plot
+
+```{r}
+plot(y=lm_predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+```
+
+
+# Generalized Estimating Equations
+
+```{r}
+library(gee)
+gee.mod = gee(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod1, 
+          id = mdf_mod$observation_oid, family = gaussian, 
+          corstr = "exchangeable")
+summary(gee.mod)
+gee.predict <- predict(gee.mod)
+```
+# Plot
+
+```{r}
+plot(y=gee.predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+```
+
+
+
+```{r}
+geeInd <- gee(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod, id = mdf_mod$observation_oid, family = gaussian, 
+          corstr = "independence")
+summary(geeInd)
+```
+
+
+```{r}
+geeEx <- gee(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod, id = mdf_mod$observation_oid, family = gaussian, 
+          corstr = "exchangeable")
+
+summary(geeEx)
+```
+
+
+```{r}
+geeAr1 <- gee(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod, id = mdf_mod$observation_oid, family = gaussian, 
+          corstr= 'unstructured')
+summary(geeAr1)
+
+```
+
+```{r}
+gee.predict <- predict(geeEx)
+
+rmse3 <- sqrt(sum((exp(gee.predict) - mdf_mod1$target_name)^2)/ 
+length(mdf_mod1$stc_s))
+Y_bar = mean(gee.mod$y, na.rm = T)
+rsquare_gee <- 1-(sum(gee.mod$scale * (gee.mod$y -  gee.mod$fitted.values)^2, 
+na.rm = T)/sum(gee.mod$scale*(gee.mod$y - Y_bar)^2,
+na.rm = T))
+c(gee_RMSE = rmse3, gee_R2 = rsquare_gee)
+```
+
+# Neural Network
+    
+
+```{r}
+library(neuralnet)
+
+scale11 <- function(x) {
+  (2 * ((x - min(x))/(max(x) - min(x)))) - 1
+}
+
+data_s1 <- mdf_mod[1:11] %>% mutate_all(scale11)
+
+data_s2 <- as.data.frame(data_s1)
+
+nnet_fit <- neuralnet(target_name ~ ra_deg + dec_deg + filter + stc_s, data = data_s2, linear.output = FALSE, hidden = c(3, 2), act.fct = 'tanh') 
+nnet_predict <- predict(nnet_fit, newdata = data_s2)
+summary(nnet_fit)
+```
+
+
+```{r}
+p2<-plot(y=nnet_predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+p2
+```
+
+
+```{r}
+summary(nnet_fit)
+```
+
+
+
+```{r}
+
+mdf_cor <- as.matrix(mdf_mod)
+corr <- cor(mdf_cor)
+par(oma=c(6,0,0,2))
+par(mar=c(2,0,0,2))
+heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+```
+
+```{r}
+# load package
+library(ggstatsplot)
+
+# correlogram
+ggstatsplot::ggcorrmat(
+  data = data_s2,
+  type = "parametric", # parametric for Pearson, nonparametric for Spearman's correlation
+  colors = c("darkred", "white", "steelblue") # change default colors
+)
+```
+
+
+
+```{r}
+layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+
+p1<-plot(lm_predict, mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+p2<-plot(y=nnet_predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+p3<-plot(gee.predict, mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+```
+
+
+```{r}
+slope1 = (lm_predict[87]-lm_predict[1])/(mdf_mod1$target_name[87]-mdf_mod1$target_name[1])
+slope2 = (nnet_predict[87]-nnet_predict[1])/(data_s2$target_name[87]-data_s2$target_name[1])
+slope3 = (gee.predict[87]-gee.predict[1])/(mdf_mod$target_name[87]-mdf_mod$target_name[1])
+```
+
+
+
+```{r}
+par(oma=c(1,1,2,1))
+par(mar=c(2,1,1,1))
+
+with(p1,plot(lm_predict, mdf_mod1$target_name, cex=2, lwd = 5, col = 3, main = "lm"))
+abline(a=0, b=slope1, lwd=2, col=6,lty='dashed')
+
+with(p2,plot(y=nnet_predict, x=data_s2$target_name, cex=2, lwd = 5, col = 4, main = "ann"))
+abline(a=data_s2$target_name[54],b=slope2, lwd=2, col=6)
+
+with(p3,plot(y=gee.predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 5, main = "gee"))
+abline(a=gee.mod$linear.predictors[10], b=slope3, lwd=2, col=2,lty='dashed')
+```
+
+
+
+```{r}
+# lm model
+rmse1 <- sqrt(sum((exp(lm_predict) - mdf_mod$target_name)^2)/length(mdf_mod$stc_s))
+
+# neuralnet model
+nnet_fit$net.result1 <- as.numeric(unlist(nnet_fit$net.result))
+Y_bar = mean(nnet_fit$net.result1, na.rm = T)
+rmse2 <- sqrt(sum((exp(nnet_predict) - data_s2$target_name)^2)/length(data_s2$stc_s))
+rsquare_nnet <- 1-(sum(nnet_fit$net.result1 * (nnet_fit$net.result1 - nnet_fit$net.result1)^2)/sum(nnet_fit$net.result1*(data_s2$target_name - Y_bar)^2))
+
+# gee model
+rmse3 <- sqrt(sum((exp(gee.predict) - mdf_mod$target_name)^2)/length(mdf_mod$stc_s))
+Y_bar = mean(gee.mod$y, na.rm = T)
+rsquare_gee <- 1-(sum(gee.mod$scale * (gee.mod$y - gee.mod$fitted.values)^2, na.rm = T)/sum(gee.mod$scale*(gee.mod$y - Y_bar)^2, na.rm = T))
+
+c(lm_RMSE = rmse1, lm_R2=summary(lm.fit)$r.squared)
+c(nnet_RMSE = rmse2, nnet_R2=rsquare_nnet)
+c(gee_RMSE = rmse3, gee_R2=rsquare_gee)
+``` 
+
+## References
+#### [1] Fox, J; Weisberg, S (2019). An R Companion to Applied Regression, Third edition. Sage, Thousand Oaks CA. https://socialsciences.mcmaster.ca/jfox/Books/Companion/.
+#### [2] Wickham H (2016). ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag New York. ISBN 978-3-319-24277-4, https://ggplot2.tidyverse.org.
+#### [3] Venables WN, Ripley BD (2002). Modern Applied Statistics with S, Fourth edition. Springer, New York. ISBN 0-387-95457-0, https://www.stats.ox.ac.uk/pub/MASS4/.
+#### [4] Wickham H (2011). âThe Split-Apply-Combine Strategy for Data Analysis.â Journal of Statistical Software, 40(1), 1â29. https://www.jstatsoft.org/v40/i01/. 
+
+
+
+```{r}
+mdf_mod$ra_deg <- (mdf_mod$ra_deg - mean(mdf_mod$ra_deg))/sd(mdf_mod$ra_deg)
+mdf_mod$dec_deg <- (mdf_mod$dec_deg - mean(mdf_mod$dec_deg))/sd(mdf_mod$dec_deg)         
+mdf_mod$target_name <- (mdf_mod$target_name - mean(mdf_mod$target_name))/sd(mdf_mod$target_name)
+mdf_mod$instrument_name <- (mdf_mod$instrument_name - mean(mdf_mod$instrument_name))/sd(mdf_mod$instrument_name)
+mdf_mod$collection <- (mdf_mod$collection - mean(mdf_mod$collection))/sd(mdf_mod$collection)
+mdf_mod$filter <- (mdf_mod$filter - mean(mdf_mod$filter))/sd(mdf_mod$filter)
+mdf_mod$start_time <- (mdf_mod$start_time - mean(mdf_mod$start_time))/sd(mdf_mod$start_time)
+mdf_mod$exposure_duration <- (mdf_mod$exposure_duration - mean(mdf_mod$exposure_duration))/sd(mdf_mod$exposure_duration)
+mdf_mod$stc_s <- (mdf_mod$stc_s - mean(mdf_mod$stc_s))/sd(mdf_mod$stc_s)
+mdf_mod$end_time <- (mdf_mod$end_time - mean(mdf_mod$end_time))/sd(mdf_mod$end_time)
+
+summary(mdf_mod)
+```
+    
+
+```{r}
+library(neuralnet)
+
+scale11 <- function(x) {
+  (2 * ((x - min(x))/(max(x) - min(x)))) - 1
+}
+
+data_s1 <- mdf_mod[1:11] %>% mutate_all(scale11)
+
+data_s2 <- as.data.frame(data_s1)
+
+nnet_fit <- neuralnet(target_name ~ ra_deg + dec_deg + filter + stc_s, data = data_s2, linear.output = FALSE, hidden = c(3, 2), act.fct = 'tanh') 
+nnet_predict <- predict(nnet_fit, newdata = mdf_mod)
+summary(nnet_fit)
+```
+
+
+```{r}
+p2<-plot(y=nnet_predict, x=mdf_mod$target_name, cex=2, lwd = 5, col = 3)
+p2
+```
+
+
+```{r}
+summary(nnet_fit)
+```
+
+
+
+```{r}
+
+mdf_cor <- as.matrix(data_s2)
+corr <- cor(data_s2)
+par(oma=c(6,0,0,2))
+par(mar=c(2,0,0,2))
+heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+```
+
+```{r}
+# load package
+library(ggstatsplot)
+
+# correlogram
+ggstatsplot::ggcorrmat(
+  data = data_s2,
+  type = "parametric", # parametric for Pearson, nonparametric for Spearman's correlation
+  colors = c("darkred", "white", "steelblue") # change default colors
+)
+```
+
+
+```{r}
+summary(ols <- lm(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod1))
+
+opar <- par(mfrow = c(2,2), oma = c(0, 0, 1.1, 0))
+plot(ols, las = 1)
+par(opar)
+```
+
+
+```{r}
+mdf_mod1[c(7, 8, 85), 1:2]
+```
+
+
+```{r}
+d1 <- cooks.distance(ols)
+r <- stdres(ols)
+a <- cbind(mdf_mod1, d1, r)
+a[d1 > 4/87, ]
+```
+
+
+```{r}
+rabs <- abs(r)
+a <- cbind(mdf_mod1, d1, r, rabs)
+asorted <- a[order(-rabs), ]
+asorted[1:10, ]
+```
+
+
+```{r}
+summary(rr.huber <- rlm(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod1))
+```
+
+
+```{r}
+hweights <- data.frame(target_name = mdf_mod1$target_name, resid = rr.huber$resid, weight = rr.huber$w)
+hweights2 <- hweights[order(rr.huber$w), ]
+hweights2[1:15, ]
+```
+
+
+```{r}
+rr.bisquare <- rlm(target_name ~ ra_deg + dec_deg + filter + stc_s, data = mdf_mod1, psi = psi.bisquare)
+summary(rr.bisquare)
+```
+
+
+```{r}
+biweights <- data.frame(target_name = mdf_mod1$target_name, resid = rr.bisquare$resid, weight = rr.bisquare$w)
+biweights2 <- biweights[order(rr.bisquare$w), ]
+biweights2[1:15, ]
+```
+
+

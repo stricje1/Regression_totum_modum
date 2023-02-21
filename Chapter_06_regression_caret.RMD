@@ -1,0 +1,700 @@
+---
+title: "Regression using caret"
+author: "Jeffrey Strickland"
+date: "2023-02-20"
+output: word_document
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+```
+
+## Introduction
+
+To illustrate the use of caret for regression, we’ll consider some simulated data for several elements of the 2-line Element Set or ELSET. The primary variable of interest is calculated mathematical orbital parameters that use the simulated variables, like semi_latus_rectum uses the simulated values of focal_param and eccentricity.
+
+```{r}
+library(caret)
+g = 6.67*10^(-11)
+
+gen_some_data = function(n_obs = 50) {
+  int_designator = seq(0, 10, length.out = n_obs)
+  eccentricity = runif(n = n_obs, min = 0, max = 90)
+  classification = sample(c("U", "C", "S"), size = n_obs, 
+                          replace = TRUE)
+  periapsis  = round(runif(n = n_obs, min = 0, max = 90), 4)
+  inclination = round(runif(n = n_obs, min = 0, max = 180), 4)
+  mean_anomoly = round(runif(n = n_obs, min = 0, max = 360),4)
+  mass1 = round(runif(n = n_obs, min = 100, max = 999),4)
+  mass2 = round(runif(n = n_obs, min = 1000, max = 2000),4)
+  day = round(runif(n = n_obs, min = 0, max = 24), 4)
+  focal_param = round(runif(n = n_obs, min = 100, 
+                            max = 400),4)
+  semi_latus_rectum = focal_param*eccentricity
+  semimajor_axis = semi_latus_rectum/abs((1-eccentricity^2))
+  mean_motion = 360/focal_param
+  #mean_motion = sqrt((g*(mass1+mass2)/(semimajor_axis^3)))
+  
+  data.frame(mean_motion, semimajor_axis, semi_latus_rectum, 
+             int_designator, eccentricity, classification, periapsis, 
+             mean_anomoly, inclination)
+}
+```
+
+## Data Simulation
+
+We first simulate a train and test dataset from our orbital parameters.
+
+```{r}
+set.seed(42)
+orb_tst = gen_some_data(n_obs = 20000)
+orb_trn = gen_some_data(n_obs = 5000)
+summary(orb_trn)
+```
+
+While the data summary might indicate that we should normalize the data, we’ll forego that and use a model parameter to do so. The caret package’s train() function has an argument named preProcess, and it will perform the usual data preprocessing tasks that we perform, including normalizing the data.
+
+### Feature Plot
+
+```{r}
+caret::featurePlot(x = orb_trn[, c("inclination", 
+                                   "semimajor_axis", "semi_latus_rectum", "eccentricity", 
+                                   "periapsis", "mean_anomoly")], 
+                   y = orb_trn$mean_motion,
+                   adjust = 1, 
+                   pch = "|", 
+                   layout = c(2,3), 
+                   auto.key = list(columns = 2))
+```
+
+## Model 1: Regression knn Model
+
+Fitting a regression knn works nearly identically to its use for classification. Really, the only difference here is that we have a numeric response, which caret understands to be a regression problem.
+
+```{r}
+orb_knn_mod = train(
+  mean_motion ~ .,
+  data = orb_trn,
+  method = "knn",
+  trControl = trainControl(method = "cv", number = 5),
+  preProcess = c("center", "scale"),
+  tuneGrid = expand.grid(k = seq(1, 41, by = 2))
+)
+```
+
+Let’s check to make sure this is a regression model.
+
+```{r}
+orb_knn_mod$modelType
+```
+
+Note that if we had commented out the line to perform pre-processing, our model would not perform as well. Why?
+
+### Tuning Parameter
+
+Now that we are dealing with a tuning parameter, train() determines the best value of those considered, by default selecting the best (highest cross-validated) accuracy and returning that value as bestTune.
+
+```{r}
+orb_knn_mod$bestTune
+```
+
+Here we create a user defined function called get_best_result for obtaining results from the tuned model:
+
+```{r}
+get_best_result = function(caret_fit) {
+  best = which(rownames(caret_fit$results) ==
+                 rownames(caret_fit$bestTune))
+  best_result = caret_fit$results[best, ]
+  rownames(best_result) = NULL
+  best_result
+}
+```
+
+Sometimes it will be useful to obtain the results for only that value. The above function does this automatically.
+
+```{r}
+get_best_result(orb_knn_mod)
+```
+
+### Plot the Model
+
+By default, caret utilizes the lattice graphics package to create these plots. Recently, additional support for ggplot2 style graphics has been added for some plots.
+
+```{r}
+plot(orb_knn_mod)
+```
+
+Sometimes, instead of simply picking the model with the best RMSE (or accuracy), we pick the simplest model within one standard error of the model with the best RMSE. This is referred to as the “1-SE Rule” (Chen and Yang challenge the validity of this rule in (Chen & Yang, 2021)) Here then, we would consider k = 5 instead of k = 7 since there isn’t a statistically significant difference. This is potentially a very good idea in practice. By picking a simpler model, we are essentially at less risk of overfitting, especially since in practice, future data may be slightly different than the data that we are training on. If you’re trying to win a Kaggle competition, this might not be as useful, since often the test and train data come from the exact same source.
+
+```{r}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+Since we simulated this data, we have a rather large test dataset. This allows us to compare our cross-validation error estimate, to an estimate using (an impractically large) test set.
+
+```{r}
+get_best_result(orb_knn_mod)$RMSE
+```
+
+
+```{r}
+knn_cv_rmse <- calc_rmse(actual = orb_tst$mean_motion,
+          predicted = predict(orb_knn_mod, orb_tst))
+print(paste("KNN Cross-Validation RMSE =", round(knn_cv_rmse,5)))
+```
+
+Here we see that the cross-validation RMSE is very close to the test error. The real question is, are either of these any good? Is this model predicting well?
+
+## Model 2: Using Methods
+
+Now that caret has given us a pipeline for a predictive analysis, we can very quickly and easily test new methods. For example, we can generate boosted tree models. Since we understand how to use caret, we will use it to build a boosted tree model. We simply need to know the “method” to do so, which in this case is the gradient boosting method, gbm (see http://topepo.github.io/caret/train-models-by-tag.html). Beyond knowing that the method exists, we just need to know its tuning parameters and in this case, there are four. We could do this without knowing much about boosted trees, and simply specify a tuneLength, and then allow caret to automatically try some reasonable values.
+
+The caret documentation can help us find the tuning parameters, as well as the packages required for generating them. For now, we’ll simply generate the following tuning grid, and use it to train a new model.
+
+```{r}
+gbm_grid = expand.grid(interaction.depth = c(1, 2, 3),
+                       n.trees = (1:30) * 100,
+                       shrinkage = c(0.1, 0.3),
+                       n.minobsinnode = 20)
+head (gbm_grid)
+```
+
+Next, we use the tuning grid to train a new model.
+
+```{r}
+set.seed(42)
+orb_gbm_mod = train(
+  mean_motion ~ .,
+  data = orb_trn,
+  trControl = trainControl(method = "cv", number = 5),
+  method = "gbm",
+  tuneGrid = gbm_grid, 
+  verbose = FALSE
+)
+```
+
+We added verbose = FALSE to the train() call to suppress some of the intermediate output of the gbm fitting procedure.
+How this training is happening is a bit of a mystery to us right now. What is this method? How does it deal with the factor variable as a predictor? We’ll answer these questions later, for now, we do know how to evaluate how well the method is working.
+
+```{r}
+knitr::kable(head(orb_gbm_mod$results), digits = 3)
+```
+
+Here, we call and print the best tuning parameters.
+
+```{r}
+orb_gbm_mod$bestTune
+```
+
+Here we obtain the set of tuning parameters that performed best. Based on the above plot, do you think we considered enough possible tuning parameters?
+
+```{r}
+get_best_result(orb_gbm_mod)
+```
+
+Next, we plot the cross-validation RMSE against the boosting iterations for two shrinkage scenarios.
+
+```{r}
+plot(orb_gbm_mod)
+```
+
+Now, we calculate the cross-validation RMSE.
+
+```{r}
+gbm_cv_rmse <- calc_rmse(actual = orb_tst$mean_motion,
+          predicted = predict(orb_gbm_mod, orb_tst))
+print(paste("GBM Cross-Validation RMSE =", round(gbm_cv_rmse,5)))
+```
+
+Again, the cross-validated result is overestimating the error a bit. Also, this model is a big improvement over the knn model, but we can still do better.
+
+## Model 3: Orthogonal Polynomials
+
+Here we fit a good old linear model, except, we specify a very specific formula as orthogonal polynomials of the features.
+
+```{r}
+orb_lm_mod = train(
+  mean_motion ~ poly(semimajor_axis, 2) + poly(mean_anomoly,
+                                               2) + eccentricity,
+  data = orb_trn,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 5)
+)
+orb_lm_mod$finalModel
+```
+
+Now, we extract the train RMSE and print it.
+
+```{r}
+orb_lm_mod$results$RMSE
+```
+
+We also calculate variable importance
+
+```{r}
+varImp(orb_lm_mod)
+```
+
+Next, we plot the variable importance data.
+
+```{r}
+plot(varImp(orb_lm_mod))
+```
+
+Finally, we calculate the cross-validation RMSE.
+
+```{r}
+opoly_cv_rmse <- calc_rmse(actual = orb_tst$mean_motion,
+          predicted = predict(orb_lm_mod, orb_tst))
+print(paste("OPoly Cross-Validation RMSE =", round(opoly_cv_rmse,5)))
+```
+
+This model dominates the previous two. The gbm model does still have a big advantage. The lm model needed the correct form of the model, whereas gbm nearly learned it automatically!
+This question of which variables should be included is where we will turn our focus next. We’ll consider both what variables are useful for prediction and learn tools to assess how useful they are.
+
+
+## Model 4: Regression Trees
+Regression trees are decision trees in which the target variables can take continuous values instead of class labels in leaves. Regression trees use modified split selection criteria and stopping criteria. Regression trees divide the data into subsets, that is, branches, nodes, and leaves. Like decision trees, regression trees select splits that decrease the dispersion of target attribute values. Thus, the target attribute values can be predicted from their mean values in the leaves.  In the algorithm, we try to reduce the Mean Square Error at each child rather than the entropy, as we would with classification trees. 	
+Data
+
+Recent probes of the Earth’s moon for mineral deposits detected what may be a new mineral not available on Earth. These deposits seem to be collocated with other rare Earth mineral deposits. Given the cost and sensitivity of Moon mining operations, we want to identify the most promising deposits using the features defined here.
+
+•	lithium = proportion of deposit
+•	zinc = proportion of deposit
+•	plutonium = proportion of deposit
+•	validated = proportion of deposit
+•	samarium = proportion of deposit
+•	promethium = proportion of deposit
+•	weeks = since initial reading
+•	scandium = proportion of deposit
+•	rad = rad reading
+•	val = Validate by second source
+•	lat = Lunar latitude
+•	lon = Lunar longitude
+•	alt = Lunar depth from surface
+•	medv = proportion (value x 10-2) of probed mineral deposit conatining new mineral
+
+```{r}
+library(caret)
+library(readr)
+library(tree)
+
+set.seed(18)
+
+min_df <- read_csv("https://raw.githubusercontent.com/stricje1/Data/master/minerals.csv")
+min_idx = sample(1:nrow(min_df), nrow(min_df) / 2)
+min_trn = min_df[min_idx,]
+min_tst = min_df[-min_idx,]
+head (min_trn)
+```
+
+### Fitting an Unpruned Tree
+
+Here we use the tree package and its tree function to fit an unpruned regression tree to the training data.
+
+```{r}
+min_tree = tree(medv ~ ., data = min_trn)
+summary(min_tree)
+```
+
+Next, we plot the unpruned tree.
+
+```{r}
+plot(min_tree, col = 'dodgerblue', lwd = 2)
+text(min_tree, pretty = 2)
+title(main = "Unpruned Regression Tree")
+```
+
+## Tree Pruning
+
+As with classification trees, we can use cross-validation to select a good pruning of the tree. We use the cv.tree function for this purpose.
+
+```{r}
+set.seed(18)
+min_tree_cv = cv.tree(min_tree)
+plot(min_tree_cv$size, sqrt(min_tree_cv$dev / nrow(min_trn)), type = "b", xlab = "Tree Size", ylab = "CV-RMSE", col = 'darkviolet', lwd = 2)
+```
+
+
+While the tree of size 11 does have the lowest RMSE, we’ll prune to a size of 8 as it seems to perform just as well. We use the prune.tree function for pruning. (Otherwise, we would not be pruning.) The pruned tree is, as expected, smaller and easier to interpret.
+
+```{r}
+min_tree_prune = prune.tree(min_tree, best = 8)
+summary(min_tree_prune)
+```
+
+Now, we plot the pruned tree.
+
+```{r}
+plot(min_tree_prune, col = 'dodgerblue', lwd = 2)
+text(min_tree_prune, pretty = 2)
+title(main = "Pruned Regression Tree")
+```
+
+This pruning may have been too much as it removes lithium as a factor. We'll see.
+
+## Regression Tree using Rpart
+
+Alternative, we can use tree and tree plotting functions from the rpart, rpart.plot, and rattle packages.
+
+```{r}
+library(rattle)
+library(rpart)
+library(rpart.plot)
+```
+
+First, we build the initial regression tree using rpart.
+
+```{r}
+tree2 <- rpart(medv ~ ., data = min_trn)            
+prp(tree2)
+```
+
+Next, we identify the best cp value to use.
+
+```{r}
+best <- tree2$cptable[which.min(tree2$cptable[,"xerror"]),"CP"]
+```
+
+Then, we produce a pruned tree based on the best cp value.
+
+```{r}
+pruned_tree <- prune(tree2, cp = best)
+```
+
+Finally, we plot the pruned tree.
+
+```{r}
+prp(pruned_tree, box.palette = "RdBu", shadow.col = "gray", nn = TRUE)
+```
+
+Tree plot of the pruned regression tree, showing most promising deposits when longitude is greater than or equal to 14, when there is a proportion of samarium greater than or equal to 0.61 and with a proportion of lithium greater than or equal to 14.
+
+So far all of our trees render the same results: the most promising deposits occur where the longitude is greater than or equal to 14, when there is a proportion of samarium greater than or equal to 0.61 and with a proportion of lithium greater than or equal to 14.
+
+For a better-looking plot, we use fancyRpartPlot from the rattle package.
+
+```{r}
+fancyRpartPlot(pruned_tree) 
+```
+
+6 11. Rattle regression tree plot of the pruned regression tree, showing most promising deposits when longitude is greater than or equal to 14, when there is a proportion of samarium greater than or equal to 0.61 and with a proportion of lithium greater than or equal to 14.
+
+## Model Comparison
+
+Let’s compare this regression tree to an additive linear model and use RMSE as our metric.
+
+```{r}
+rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+We obtain predictions on the train and test sets from the pruned tree. We also plot actual vs predicted. This plot may look odd. We’ll compare it to a plot for linear regression below.
+
+```{r}
+sqrt(summary(min_tree_prune)$dev / nrow(min_trn))
+```
+
+Now, we calculate the train RMSE.
+
+```{r}
+min_prune_trn_pred = predict(min_tree_prune, newdata = min_trn)
+rmse(min_prune_trn_pred, min_trn$medv)
+```
+
+And now we  use the model to predict and calculate the test RMSE.
+
+```{r}
+min_prune_tst_pred = predict(min_tree_prune, newdata = min_tst)
+tree_cv_rmse <- rmse(min_prune_tst_pred, min_tst$medv)
+print(paste("Tree Cross-Validation RMSE =", round(tree_cv_rmse,5)))
+```
+
+Finally, we plot the actual vs the predicted with an abline.
+
+```{r}
+plot(min_prune_tst_pred, min_tst$medv, xlab = "Predicted", ylab = "Actual")
+abline(0, 1, col = 'magenta', lwd = 2)
+```
+
+## Linear Additive Model
+
+Here, using an additive linear regression the actual vs predicted looks much more like what we are used to (see Figure 6 13).
+
+```{r}
+min_lm = lm(medv ~ ., data = min_trn)
+summary(min_lm)
+```
+
+Next, we compute the predicted values using the test set. We also build a plot of the predicted values vs actuals using the test data.
+
+```{r}
+min_lm_pred = predict(min_lm, newdata = min_tst)
+plot(min_lm_pred, min_tst$medv, xlab = "Predicted", ylab = "Actual")
+abline(0, 1, col = 'magenta', lwd = 2)
+```
+
+Here, we calculate the RMSE of the predictions for the additive linear model using the test set.
+
+```{r}
+lm_cv_rmse <- rmse(min_lm_pred, min_tst$medv)
+print(paste("LM Cross-Validation RMSE =", round(lm_cv_rmse,5)))
+```
+
+We also see a lower test RMSE. The most obvious linear regression beats the tree! Again, we’ll improve on this tree soon. Also note the summary of the additive linear regression below. Which is easier to interpret, that output, or the small tree above?
+
+```{r}
+summary(min_lm)
+```
+
+We also print the model coefficients alone using coef().
+
+```{r}
+coef(min_lm)
+```
+
+## Model 5: Random Forest
+
+Random forests are a modification of bagging that builds a large collection of de-correlated trees and have become a very popular “out-of-the-box” learning algorithm that enjoys good predictive performance.
+Random forests are built on the same fundamental principles as decision trees and bagging (check out this tutorial if you need a refresher on these techniques). Bagging trees introduces a random component into the tree building process that reduces the variance of a single tree’s prediction and improves predictive performance. However, the trees in bagging are not completely independent of each other since all the original predictors are considered at every split of every tree. Rather, trees from different bootstrap samples typically have similar structure to each other (especially at the top of the tree) due to underlying relationships.
+This characteristic is known as tree correlation and prevents bagging from optimally reducing variance of the predictive values. In order to reduce variance further, we need to minimize the amount of correlation between the trees. This can be achieved by injecting more randomness into the tree-growing process. Random forests achieve this in two ways:
+
+1. Bootstrap: similar to bagging, each tree is grown to a bootstrap resampled data set, which makes them different and somewhat decorrelates them.
+
+2. Split-variable randomization: each time a split is to be performed, the search for the split variable is limited to a random subset of m of the p variables. For regression trees, typical default values are m=p/3 but this should be considered a tuning parameter. When m=p, the randomization amounts to using only step 1 and is the same as bagging.
+
+We now try a random forest. For regression, the suggestion is to use mtry equal to p/3. mtry is the number of variables to randomly sample as candidates at each split.
+
+```{r}
+library(randomForest)
+min_forest = randomForest(medv ~ ., data = min_trn, mtry = 4, 
+                          importance = TRUE, ntrees = 500)
+min_forest
+```
+
+Here, we calculate the variable importance.
+
+```{r}
+importance(min_forest, type = 1)
+```
+
+Next, we plot the variable importance.
+
+```{r}
+varImpPlot(min_forest, type = 1, pch = 16, col = "dodgerblue")
+```
+
+Now, we’ll use the random forest model to make predictions and then the predicted values vs the actuals, also adding an abline.
+
+```{r}
+min_forest_tst_pred = predict(min_forest, newdata = min_tst)
+plot(min_forest_tst_pred, min_tst$medv,
+     xlab = "Predicted", ylab = "Actual",
+     main = "Predicted vs Actual: Random Forest, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2 , cex = 1.5)
+```
+
+Next, we calculate RMSEs for training, OOB, and test. Out of bag (OOB) score is a way of validating the random forest model.
+
+```{r}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+Here we note three RMSEs. The training RMSE (which is optimistic), the OOB RMSE (which is a reasonable estimate of the test error) and the test RMSE. Also note that variables importance was calculated.
+
+```{r}
+forest_tst_rmse = calc_rmse(min_forest_tst_pred, min_tst$medv)
+min_forest_trn_pred = predict(min_forest, newdata = min_trn)
+forest_trn_rmse = calc_rmse(min_forest_trn_pred, min_trn$medv)
+forest_oob_rmse = calc_rmse(min_forest$predicted, min_trn$medv)
+print(paste("Tree Training RMSE =", round(forest_trn_rmse,5)))
+print(paste("Tree Train RMSE =", round(forest_tst_rmse,5)))
+print(paste("Tree OOB RMSE =", round(forest_oob_rmse,5)))
+```
+
+### Plot RF model
+
+Plotting the model will illustrate the error rate as we average across more trees and shows that our error rate stabilizes with around 100 trees but continues to decrease slowly until around 300 or so trees.
+
+```{r}
+set.seed(123)
+plot(min_forest, col = "dodgerblue", lwd = 2, main = "Single Tree: Error vs Number of Trees")
+grid()
+```
+
+## OOB Error vs. Test Set Error
+Similar to bagging, a natural benefit of the bootstrap resampling process is that random forests have an out-of-bag (OOB) sample that provides an efficient and reasonable approximation of the test error. This provides a built-in validation set without any extra work on your part, and you do not need to sacrifice any of your training data to use for validation. This makes identifying the number of trees required to stabilize the error rate during tuning more efficient; however, as illustrated below some difference between the OOB error and test error are expected.
+First, we calculate the number of trees that provide the lowest MSE.
+
+```{r}
+which.min(min_forest$mse)
+```
+
+Next, we calculate the RMSE of this optimal random forest.
+
+```{r}
+sqrt(min_forest$mse[which.min(min_forest$mse)])
+```
+
+Now, we create a split for new training and validation data sets.
+
+```{r}
+library(rsample)
+set.seed(123)
+valid_split <- initial_split(min_df, 0.8)
+```
+
+Next we create the training data set.
+
+```{r}
+min_train_v2 <- analysis(valid_split)
+```
+
+Then, we create the validation data set and fit a random forest.
+
+```{r}
+min_valid <- assessment(valid_split)
+```
+
+Then, we create the validation data set and fit a random forest.
+
+```{r}
+x_test <- min_valid[setdiff(names(min_valid), "medv")]
+y_test <- min_valid$medv
+
+rf_oob_comp <- randomForest(
+  formula = medv ~ .,
+  data    = min_train_v2,
+  xtest   = x_test,
+  ytest   = y_test
+)
+```
+
+Now, we extract OOB & validation errors.
+
+```{r}
+oob <- sqrt(rf_oob_comp$mse)
+validation <- sqrt(rf_oob_comp$test$mse)
+```
+
+Finally, we compare error rates.
+
+```{r}
+tibble::tibble(
+  `Out of Bag Error` = oob,
+  `Test error` = validation,
+  ntrees = 1:rf_oob_comp$ntree
+) %>%
+  gather(Metric, RMSE, -ntrees) %>%
+  ggplot(aes(ntrees, RMSE, color = Metric)) +
+  geom_line(size = 2) +
+  scale_y_continuous(labels = scales::dollar) +
+  xlab("Number of trees")
+```
+
+## Bagging
+
+We now fit a bagged model, using the randomForest package. Bagging is actually a special case of a random forest where mtry is equal to p, the number of predictors.
+
+```{r}
+min_bag = randomForest(medv ~ ., data = min_trn, mtry = 13, 
+                       importance = TRUE, ntrees = 500)
+min_bag
+```
+
+
+Next, we generate a plot the actuals vs predicted for the bagged model.
+
+```{r}
+min_bag_tst_pred = predict(min_bag, newdata = min_tst)
+plot(min_bag_tst_pred, min_tst$medv,
+     xlab = "Predicted", ylab = "Actual",
+     main = "Predicted vs Actual: Bagged Model, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+```
+
+Now we calculaute the RMSE.
+
+```{r}
+bag_tst_rmse = calc_rmse(min_bag_tst_pred, min_tst$medv)
+print(paste("Tree Cross-Validation RMSE =", round(bag_tst_rmse,5)))
+```
+
+Here we see two interesting results. First, the predicted versus actual plot no longer has a small number of predicted values. Second, our test error has dropped dramatically. Also note that the “Mean of squared residuals” which is output by randomForest is the Out of Bag estimate of the error.
+
+```{r}
+plot(min_bag, col = "dodgerblue", lwd = 2, main = "Bagged Trees: Error vs Number of Trees")
+grid()
+```
+
+## Model 7: Boosting
+
+Lastly, we try a boosted model, which by default will produce a nice variable importance plot as well as plots of the marginal effects of the predictors. We use the gbm package.
+
+```{r}
+library(gbm)
+
+min_boost = gbm(medv ~ ., data = min_trn, 
+                distribution = "gaussian", n.trees = 5000, 
+                interaction.depth = 4, shrinkage = 0.01)
+min_boost
+```
+
+Now, well make boost plots for the four most influential variables: longitude, promethium, scandium, and lithium.
+
+```{r}
+par(mfrow = c(1, 3))
+plot(min_boost, i = "promethium", col = "dodgerblue", lwd = 2)
+```
+
+Line plot for the promethium component of the boost model.
+
+```{r}
+plot(min_boost, i = "lon", col = "dodgerblue", lwd = 2)
+```
+
+Line plot for the longitude component of the boost model.
+
+```{r}
+plot(min_boost, i = "scandium", col = "dodgerblue", lwd = 2)
+```
+
+Next, we calculate the boost RMSE.
+
+```{r}
+min_boost_tst_pred = predict(min_boost, newdata = min_tst, 
+                             n.trees = 5000)
+boost_tst_rmse = calc_rmse(min_boost_tst_pred, min_tst$medv)
+print(paste("Tree Cross-Validation RMSE =", round(boost_tst_rmse,5)))
+```
+
+Final, we plot the boost model's actuals vs predicted values with abline.
+
+```{r}
+plot(min_boost_tst_pred, min_tst$medv,
+     xlab = "Predicted", ylab = "Actual", 
+     main = "Predicted vs Actual: Boosted Model, Test Data",
+     col = "dodgerblue", pch = 20)
+grid()
+abline(0, 1, col = "darkorange", lwd = 2)
+```
+
+## Results
+
+```{r}
+(min_rmse = data.frame(
+  Model = c("Single Tree", "Linear Model", "Bagging",  "Random Forest",  "Boosting"),
+  TestError = c(tree_cv_rmse, lm_cv_rmse, bag_tst_rmse, forest_tst_rmse, boost_tst_rmse)
+)
+)
+```

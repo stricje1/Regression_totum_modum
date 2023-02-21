@@ -1,0 +1,375 @@
+---
+title: "Lasso Regression"
+author: "Jeffrey Strickland"
+date: "2022-12-06"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load the Data
+
+```{r}
+library(glmnet)
+train <- read.csv("C:\\Users\\jeff\\Documents\\Data\\survive2.csv")
+```
+
+## Standardize the Data
+
+```{r}
+train$RSO_Weight <- (train$RSO_Weight - mean(train$RSO_Weight))/sd(train$RSO_Weight)
+train$RSO_Density <- (train$RSO_Density - mean(train$RSO_Density))/sd(train$RSO_Density)
+train$RSO_Visibility <- (train$RSO_Visibility - mean(train$RSO_Visibility))/sd(train$RSO_Visibility)
+train$RSO_MRP <- (train$RSO_MRP - mean(train$RSO_MRP))/sd(train$RSO_MRP)
+train$Orbit_Establishment_Year <- (train$Orbit_Establishment_Year - mean(train$Orbit_Establishment_Year))/sd(train$Orbit_Establishment_Year)
+train$Orbit_Height <- (train$Orbit_Height - mean(train$Orbit_Height))/sd(train$Orbit_Height)
+train$Stealth_Type <- (train$Stealth_Type - mean(train$Stealth_Type))/sd(train$Stealth_Type)
+train$RSO_Type <- (train$RSO_Type - mean(train$RSO_Type))/sd(train$RSO_Type)
+train$Survivability <- (train$Survivability - mean(train$Survivability))/sd(train$Survivability)
+summary(train)
+```
+
+## Define the Response and Features
+
+```{r}
+train <- train[c(-1)]
+Y <- train[c(9)]
+X <- model.matrix(Survivability ~., train)
+```
+
+## Train - CV Split
+
+```{r}
+set.seed(567)
+
+part <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+X_train<- X[part == 1,]
+X_cv<- X[part == 2,]
+
+Y_train<- Y[part == 1,]
+Y_cv<- Y[part == 2,]
+```
+
+## Form the Model Matrix
+
+```{r}
+X <- model.matrix(Survivability ~., train)
+lambda <- 10^seq(10, -2, length = 100)
+```
+
+## Fit the Lasso Model
+
+We now illustrate **lasso**, which can be fit using `glmnet()` with `alpha = 1` and seeks to minimize
+
+```{r}
+lasso_reg <- glmnet(X_train, Y_train, alpha = 1, lambda = lambda, type.measure = "mse")
+bestlam <- lasso_reg$lambda.min
+```
+
+Like ridge, lasso is not scale invariant.
+
+The two plots illustrate how much the coefficients are penalized for different values of $\lambda$. Notice some of the coefficients are forced to be zero.
+
+```{r, fig.height = 5, fig.width = 8}
+par(mfrow = c(1, 2))
+plot(lasso_reg, lwd = 2)
+plot(lasso_reg, xlim =c(-5,0), xvar = "lambda", label = TRUE, lwd = 2)
+```
+
+Again, to actually pick a $\lambda$, we will use cross-validation. The plot is similar to the ridge plot. Notice along the top is the number of features in the model. (Which changed in this plot.)
+
+`cv.glmnet()` returns several details of the fit for both $\lambda$ values in the plot. Notice the penalty terms are again smaller than the full linear regression. (As we would expect.) Some coefficients are 0.
+
+```{r, fig.height = 5, fig.width = 8}
+par(mfrow = c(1,1))
+lasso_reg_cv = cv.glmnet(X_train, Y_train, alpha = 1)
+coef(lasso_reg_cv)
+plot(lasso_reg_cv)
+```
+
+## Coefficients Barplot
+
+```{r}
+#lasso_reg_cv <- predict(lasso_reg, type = "coefficients", s = bestlam)[1:9]
+plotlabels <- c("Intercept","Intercept",names(train[1:8]))
+par(mar=c(10,4,2,1))
+barplot(coef(lasso_reg_cv)[1:10], main="Model 1 Coefficients",ylab="Coefficients",las=2, cex=.9, cex.lab=1, cex.main=1.25, cex.sub=.75, cex.axis=.75, las=2, col= "green2", names = plotlabels)
+```
+
+# Lasso reg & plots
+`cv.glmnet()` returns several details of the fit for both $\lambda$ values in the plot. Notice the penalty terms are again smaller than the full linear regression. (As we would expect.) Some coefficients are 0.
+
+
+Here, we calculate the fitted coefficients, using 1-SE rule lambda, default. behavior.
+
+```{r}
+coef(lasso_reg_cv)
+```
+
+Next, we calculate the fitted coefficients, using minimum lambda.
+
+```{r}
+coef(lasso_reg_cv, s = "lambda.min")
+```
+
+Now, we calculate the penalty term using minimum lambda.
+
+```{r}
+sum(coef(lasso_reg_cv, s = "lambda.min")[-1] ^ 2)
+```
+
+Then, we calculate the fitted coefficients, using 1-SE rule lambda.
+
+```{r}
+coef(lasso_reg_cv, s = "lambda.1se")
+```
+
+Next, we calculate the penalty term using 1-SE rule lambda.
+
+```{r}
+sum(coef(lasso_reg_cv, s = "lambda.1se")[-1] ^ 2)
+```
+
+Here, we calculate the "train error".
+
+```{r}
+sum((Y_cv - predict(lasso_reg_cv, X_cv)) ^ 2)/nrow(X_cv)
+```
+
+Next, we calculate the the CV-RMSEs.
+
+```{r}
+sqrt(lasso_reg_cv$cvm)
+```
+
+Next, we calculate the the CV-RMSEs using minimum lambda.
+
+```{r}
+sqrt(lasso_reg_cv$cvm[lasso_reg_cv$lambda == lasso_reg_cv$lambda.min])
+```
+
+Finally, we calculate the the CV-RMSEs using 1 se lambda.
+
+```{r}
+sqrt(lasso_reg_cv$cvm[lasso_reg_cv$lambda == lasso_reg_cv$lambda.1se])
+```
+
+## `broom`
+
+Sometimes, the output from `glmnet()` can be overwhelming. The `broom` package can help with that.
+
+```{r, message = FALSE, warning = FALSE}
+library(broom)
+# the output from the commented line would be immense
+# fit_lasso_cv
+tidy(lasso_reg_cv)
+# the two lambda values of interest
+glance(lasso_reg_cv) 
+```
+
+predict & plot using minimum lambda
+
+```{r, eval = FALSE}
+pred <- predict(lasso_reg_cv, X_cv, s = "lambda.min")
+plot(pred, col = 'dodgerblue', pch = 20)
+```
+
+## Coefficient over L1 Norm Plot
+`cv.glmnet()` returns several details of the fit for both $\lambda$ values in the plot. Notice the penalty terms are again smaller than the full linear regression. (As we would expect.) Some coefficients are 0.
+
+## cv and polt with reflex = True
+
+```{r, results='hide'}
+cv.lasso_reg<-cv.glmnet(X_train, Y_train, alpha=1, nfolds=5, type.measure = "mse", trace.it=1, relax=TRUE)
+plot(cv.lasso_reg)
+```
+
+### Lasso RMSE
+
+```{r}
+library(Metrics)
+print(paste("MSE =", mse(Y_cv,predict(cv.lasso_reg, lambda = bestlam, newx = X_cv))))
+print(paste("RMSE =", rmse(Y_cv,predict(cv.lasso_reg, lambda = bestlam, newx = X_cv))))
+print(paste("MAPE =", mape(Y_cv,predict(cv.lasso_reg, lambda = bestlam, newx = X_cv))))
+print(paste("RAE =", rae(Y_cv,predict(cv.lasso_reg, lambda = bestlam, newx = X_cv))))
+```
+
+### cv and polt with reflex = False
+
+```{r, results='hide'}
+cv2.lasso_reg<-cv.glmnet(X_train, Y_train, alpha=1, nfolds=5, type.measure = "mse", trace.it=1, relax=FALSE)
+cv2.lasso_reg.coef <- predict(cv2.lasso_reg, type = "coefficients", lambda = bestlam)[1:9]
+print(paste("Variable: Intercept =", cv2.lasso_reg.coef[1]))
+print(paste("Variable:", names(train), "=", cv2.lasso_reg.coef[2:9]))
+```
+
+### Lasso Plot
+
+```{r}
+plot(cv2.lasso_reg)
+```
+
+### Coefficients & Plot
+ 
+ Plot $\lambda$ vs MSE.
+
+```{r}
+library(caret)
+lasso_reg_cv<-cv.glmnet(X_train, Y_train, alpha=1)
+
+cv_5 = trainControl(method = "cv", number = 5)
+lasso_grid = expand.grid(alpha = 1, 
+                         lambda = c(lasso_reg_cv$lambda.min, lasso_reg_cv$lambda.1se))
+lasso_grid
+```
+
+
+```{r}
+
+fit_lasso = train(
+  Survivability ~ ., data = as.data.frame(train),
+  method = "glmnet",
+  trControl = cv_5,
+  tuneGrid = lasso_grid,
+  metric = "RMSE"
+)
+fit_lasso$results
+```
+
+```{r}
+lambdas <- 10^seq(0, -3, by = -.05)
+
+cv_lasso <- cv.glmnet(X_train, Y_train, alpha = 1, 
+lambda = lambdas)
+optimal_lambda <- cv_lasso$lambda.min
+optimal_lambda
+lasso_reg = glmnet(X_train, Y_train,  alpha = 1, family = 
+'gaussian', lambda = optimal_lambda, thresh = 1e-07)
+lasso_reg
+coef(lasso_reg) 
+
+```
+
+
+```{r}
+plotlabels <- c("Intercept","Intercept",names(train[1:8]))
+par(mar=c(10,4,2,1))
+barplot(as.matrix(coef(lasso_reg))[1:10], main= "Model 5 Coefficients", 
+ylab = "Coefficients", las = 2, cex = .75, cex.lab = .75, 
+cex.main = 1.25, cex.sub = .75, cex.axis = .75, las = 2, 
+col = "#acfffd",  names = plotlabels)
+```
+
+
+```{r}
+
+library(lars)
+par(mfrow=c(2,2))
+object <- lars(x=X_train, y=Y_train)
+plot(object, lwd = 2)
+object2 <- lars(x=X_train, y=Y_train,type="lar")
+plot(object2, lwd = 2)
+object3 <- lars(x=X_cv, y=Y_cv,type="for") # Can use abbreviations
+plot(object3, lwd = 2)
+cv.lars(x=X_train,y=Y_train,trace=TRUE,max.steps=80, plot.it=TRUE)
+```
+
+
+```{r}
+lasso_obj <-lars(x=X_train, y=Y_train, type = "lasso")
+fits <- predict.lars(lasso_obj, newx=X_cv, type="fit")
+coef4.1 <- predict(lasso_obj, s=4.1, type="coef", mode="lambda")
+coef4.1
+```
+
+```{r}
+plotlabels <- names(coef4.1$coefficients)
+par(mar=c(11,4,2,1))
+barplot(as.matrix(coef4.1$coefficients)[1:9], main= "Model 2 Coefficients", 
+ylab = "Coefficients", las = 2, cex = 1, cex.lab = 1, 
+cex.main = 1.25, cex.sub = .75, cex.axis = 1, las = 2, 
+col = "#acfffd",  names = plotlabels)
+```
+
+```{r}
+plot(lasso_obj, xvar= "norm", breaks = TRUE, plottype = "coefficients", omit.zeros = F, eps = 1e-10, lwd = 2)
+```
+
+
+```{r}
+lasso_obj
+```
+
+
+```{r}
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  return(data.frame(
+  RMSE = RMSE,
+  Rsquare = R_square
+))}
+
+# Prediction and evaluation on train data.
+predictions_train <- predict(lasso_reg_cv, 
+newx = X_train)
+res1 <- eval_results(Y_train, predictions_train, X_train)
+print(res1)
+
+```
+
+```{r}
+library(caret)
+V = varImp(lasso_reg, lambda = 0.0014, scale = TRUE)
+#Remove insignificant Overall importance values.
+#Insignificant values < median value.
+#Transform from numerical to logical.
+V_log <- V > median(V$Overall) 
+V1_log <- V_log==TRUE
+#Transform to (0,1).
+V2 = V1_log-FALSE
+#Transform to numerical with insignificant = 0.
+V3 = V*V2
+#Convert to data frame.
+V4 <- as.data.frame(V3)
+#Remove rows containing 0 overall values.
+V5 <- V4[!(V4$Overall == 0),]
+#Convert to data frame.
+V5 <- as.data.frame(V5)
+#Insert new column.
+s <- nrow(V5)
+new <- seq(s)
+#Rename new column.
+V5$Variables <- new
+#Rename "V5" column to "Overall".
+names(V5)[1] <- paste('Overall')
+#Count variable reduction.
+nrow(V)
+nrow(V)-nrow(V5)
+```
+
+
+```{r}
+my_ggp <- ggplot2::ggplot(V, aes(x=reorder(rownames(V), 
+Overall), y=Overall)) +
+  geom_point(aes(color = (factor(rownames(V)))), size = 5, 
+alpha=0.6) +
+  geom_segment(aes(x=rownames(V), y = 0, xend = rownames(V), 
+yend = Overall), color = 'skyblue', size = 1.5) +
+  ggtitle("Variable Importance using Lasso Regression") +
+  guides(color = guide_legend(
+title = "Important Variables")) +
+  xlab('') +  ylab('Overall Importance') + coord_flip()
+
+my_ggp + theme_light() + 
+  theme(axis.title = element_text(size = 14))  +
+  theme(axis.text = element_text(size = 12)) +
+  theme(plot.title = element_text(size = 14)) +
+  theme(legend.title = element_text(size = 13)) +
+  theme(legend.text = element_text(size = 11)) 
+
+```

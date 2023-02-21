@@ -1,0 +1,421 @@
+---
+title: "Support Vector Regression"
+author: "Jeffrey Strickland"
+date: '2022-08-22'
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+## Example: Radar Pulses & the Ionosphere
+In ionospheric research, we must classify radar returns from the ionosphere as either suitable for further
+analysis or not. This time-consuming task has typically required human intervention.
+
+John Hopkins University Advanced Physics Lab (JHUAPL) has approached this problem using feedforward neural networks, as described in [1] and [2]. Here, we approach the problem using Support Vector Machine (SVM) machine learning applied to regression, or Support Vector Regression (SVR).
+
+## Support Vector Machines
+SVMs are well known in classification problems. The use of SVMs in regression is not as well documented, however.
+
+In most linear regression models, the objective is to minimize the sum of squared errors. Take Ordinary Least Squares (OLS) for example. The objective function for OLS with one predictor (feature) is as follows:
+
+min $\sum_{x=a}^{b} (y_i-w_ix_i)^2$
+
+where $Y_i$ is the target, $w_i$ is the coefficient, and $x_i$ is the predictor (feature).
+
+Lasso, Ridge, and ElasticNet are all extensions of this simple equation, with an additional penalty parameter that aims to minimize complexity and/or reduce the number of features used in the final model. Regardless, the aim — as with many models — is to reduce the error of the test set. However, what if we are only concerned about reducing error to a certain degree? 
+
+This is where SVR comes into play. SVR gives us the flexibility to define how much error is acceptable in our model and will find an appropriate line (or hyperplane in higher dimensions) to fit the data.
+
+In contrast to OLS, the objective function of SVR is to minimize the coefficients — more specifically, the l2-norm of the coefficient vector — not the squared error. The error term is instead handled in the constraints, where we set the absolute error less than or equal to a specified margin, called the maximum error, ϵ (epsilon). We can tune epsilon to gain the desired accuracy of our model. Our new objective function and constraints are as follows:
+
+Minimize:
+
+$min \frac{1}{2}||w||^2$
+
+Constraint (subject to):
+
+$s.t. |y_i - w_i x_i| \le \varepsilon$
+
+Giving Ourselves some Slack (and another Hyperparameter)
+
+The concept of slack variables is simple: for any value that falls outside of ϵ, we can denote its deviation from the margin as ξ.
+
+We know that these deviations have the potential to exist, but we would still like to minimize them as much as possible. Thus, we can add these deviations to the objective function.
+
+Minimize:
+
+$min \frac{1}{2}||w||^2 + {i=1}^{n}|\xi_i|$
+
+Constraints:
+
+$s.t. |y_i - w_i x_i| \le \varepsilon + |\xi_i|$
+
+### Simplying the Problem
+To simplify the problem, let's take a two-dimensional data set with a classification response, as shown in Figure. 
+
+We can clearly see the separating line after SVM is applied to the data. But, what did the data look like originally. Perhaps it looked like Figure.
+
+This is exactly what SVM does! It tries to find a line/hyperplane (in multidimensional space) that separates these two classes. Then it classifies the new point depending on whether it lies on the positive or negative side of the hyperplane depending on the classes to predict.
+
+What is a Hyperplane?
+* In one dimension, a hydroplane is single point .
+* In two-dimensions, a hyperplane is a line or vector.
+* In three - dimensions, a hyperplane is a plane
+* In more than three dimensions, we simply say hyperplane, as these are difficult to visualize.
+
+### Hyperparameters of the SVM Algorithm
+
+There are a few important parameters of SVM that you should be aware of before proceeding further:
+
+    Kernel: A kernel helps us find a hyperplane in the higher dimensional space without increasing the computational cost. Usually, the computational cost will increase if the dimension of the data increases. This increase in dimension is required when we are unable to find a separating hyperplane in a given dimension and are required to move in a higher dimension like shown in Figure.
+    
+    
+    Hyperplane: This is basically a separating line between two data classes in SVM. But in Support Vector Regression, this is the line that will be used to predict the continuous output
+    
+    Decision Boundary: We can think of a decision boundary as a demarcation line (for simplification) on one side of which lie positive examples and on the other side lie the negative examples. On this very line, the examples may be classified as either positive or negative. We apply the same concept of SVM to SVR.
+    
+## Support Vector Regression
+
+The goal of regression is to find a function that approximates mapping from an input domain to real numbers on the basis of a training sample. Referring to Figure, consider the two red lines as the decision boundary and the green line as the hyperplane. Our objective with SVR is to consider the points that are within the decision boundary. Our best fit line is the hyperplane that has a maximum number of points within the decision boundary.
+
+Consider these decision boundary lines as being at any distance, 'd', from the hyperplane. So, these are the lines are distance '+d' and '-d' from the hyperplane. We refer to this 'd' as epsilon, $\epsilon$
+
+We write the equation of the hyperplane is as:
+
+$Y = wx+b$ 
+
+Then the equation's of decision boundary becomes:
+
+$wx+b = +\epsilon$
+
+$wx+b = -\epsilon$
+
+Thus, any hyperplane that satisfies our SVR should satisfy:
+
+$-\epsilon < Y- wx+b < +\epsilon$ 
+
+Our main aim here is to decide a decision boundary at $\epsilon$ distance from the original hyperplane such that data points closest to the hyperplane, or the support vectors, are within that boundary.
+
+Hence, we are going to take only those points that are within the decision boundary and have the least error rate, or are within the Margin of Tolerance. This gives us a better fitting model.
+
+## Data Set Information
+This radar data was collected by a system in Goose Bay, Labrador. This system consists of a phased array of 16 high-frequency antennas with a total transmitted power on the order of 6.4 kilowatts. See the paper for more details. The targets were free electrons in the ionosphere. "Good" radar returns are those showing evidence of some type of structure in the ionosphere. "Bad" returns are those that do not; their signals pass through the ionosphere.
+
+Received signals were processed using an autocorrelation function whose arguments are the time of a pulse and the pulse number. There were 17 pulse numbers for the Goose Bay system (we'll number them a little differently). Instances in this database are described by 2 attributes per pulse number, corresponding to the complex values returned by the function resulting from the complex electromagnetic signal.
+
+Attribute Information:
+
+-- All 34 are continuous
+-- The 35th attribute is either "good" or "bad" according to the definition summarized above. This is a binary classification task. 
+
+### Load Data
+We'll download the data from an url provided by the data information page, and read it using `read_csv` from the `readr` package. Then we will ensure that we format it as a dataframe.
+
+```{r}
+library(readr)
+path = "https://archive.ics.uci.edu/ml/machine-learning-databases/ionosphere/ionosphere.data"
+ion_01<-read_csv(path)
+ion_01<-as.data.frame(ion_01)
+names(ion_01)
+```
+
+### Insert Sequential Columns Names Function
+Now, the data does not have column headings (variable names), but the data information tells us that there are 35 columns. the first 35 columns are comprised of data from radar returns in 17 pairs. We will name these columns in a later step as `pulse` readings. The 35th column contains the response or independent variable, `Class` (`g` for good and `b` for bad). Before we name the columns, we'll use a "help-field" of a number sequence from 1 to 35, and then we'll replace the numbers with variable names later.
+
+```{r}
+r <- 1 # Insert new row as row 1
+newrow <- seq(35) # The row will have 35 numbered headings
+insertRow <- function(existingDF, newrow, r) {
+  existingDF[seq(r+1,nrow(existingDF)+1),] <- existingDF[seq(r,nrow(existingDF)),]
+  existingDF[r,] <- newrow
+  existingDF
+}
+```
+
+### Insert Column Names
+Before we name the columns, we'll add a "help-column" of a number sequence from 1 to 350 (the number of rows of data), and then we'll replace the 36 column numbers with text, variable names. We generate the the column using `seq(s)`.
+
+```{r}
+invisible(insertRow(ion_01, newrow, r))
+
+s <- 350
+new <- seq(s)
+ion_01$new<-new
+head(ion_01,5)
+```
+
+### Rename Sequential Column Names
+The reason we need 36 column with 36 variable names is the way we'll rename the columns headings using pairs of radar pulses. We'll use the convention, pulse a and pulse b for 17 pairs. Since we'll do this using two simple for loops, we'll have the pulse names as pairs, a and b, with odd numbers 1 to 35: `pulse a 1`, `pulse b 1`, `pulse a 3`, `pulse b 3`, ..., `pulse a 35`, `pulse b 35`. Note: the second for loop will give us an error, but we have told it to ignore it using `try()`, since it does not affect the outcome.
+
+```{r}
+K=ncol(ion_01)
+for(i in 1:K){
+  names(ion_01)[i] <- paste('pulse a',i)
+}
+
+L=ncol(ion_01)
+try(
+for(i in 1:L){
+  names(ion_01)[2*i] <- paste('pulse b',2*i-1)
+}
+)
+```
+
+### Rename Response Variable
+Next, we rename pulse a 35, since it is the `Class` column containing good's and and bad's. We'll call it `class`. this leaves us with blank spaces between `pulse`, `a`, and `1`, for example, so we want to substitute underscores, `_`, for the spaces, using the `gsub` function.
+
+```{r}
+names(ion_01)[35] <- 'class'
+names(ion_01) <- gsub(" ", "_", names(ion_01))
+head(ion_01,5)
+```
+
+### Drop New Column
+Now, sin we added a 36th column to help with name changes, we'll delete that column from the dataframe. Also, we do not need the forst to columns of data, so we drop all three, using the pipeline function `%n%` and the `!` (not) function. Finally, we verify that we have the correct names.
+
+```{r}
+drop <- c("pulse_a_1","pulse_b_1","pulse_b_35")
+ion_01 = ion_01[,!(names(ion_01) %in% drop)]
+names(ion_01)
+``` 
+
+### Write Data to CSV File
+Finally, we'll save the new data set as a csv file to a local directory, using `write_csv`.
+```{r}
+setwd("C:/Users/jeff/Documents/Data")
+write_csv(ion_01,"ion_data.csv")
+```
+
+### Import Ionosphere Data
+Now, we import the file we just saved and use it for the remainder of our analysis, checking the first few rows of data to make sure we have the correct data.
+
+```{r}
+ion_data<-read_csv("C:\\Users\\jeff\\Documents\\Data\\ion_data.csv")
+head(ion_data,5) 
+```
+
+## Fit SVR Model
+Now, we start the process of fitting a SVR model to the ionosphere data.
+
+### Load the e1071 Package
+The functions in `e1071` are provided for compatibility with older versions of package `e1071` only, and may be defunct as in a future release. They provide functioning for latent class analysis, short time Fourier transform, fuzzy clustering, support vector machines, shortest path computation, bagged clustering, naive Bayes classifier, generalized k-nearest neighbor, etc.
+
+```{r}
+library(e1071)
+```
+### Define X and Y
+Next, we define a matrix of independent variables or features and the response, `class`.
+
+```{r}
+X <- as.matrix(ion_data[c(seq(32))])
+Y <- ion_data$class
+```
+
+### Label Encoding
+Here, we encode our categorical response variable into integer values (0,1), because all machine learning models require the data to be encoded into numerical format. LabelEncoder(), from the superml-package takes a vector of character or factor values and encodes them into numeric values.
+
+```{r}
+library(superml)
+lbl = LabelEncoder$new()
+Y = lbl$fit_transform(Y)
+```
+
+### Split the Data
+Now, we split the data into training and cross-validation sets.
+
+```{r}
+set.seed(567)
+part <- sample(2, nrow(X), replace = TRUE, prob = c(0.7, 0.3))
+X_train<- X[part == 1,]
+X_cv<- X[part == 2,]
+
+Y_train<- Y[part == 1]
+Y_cv<- Y[part == 2]
+```
+
+### Regression with SVM
+Now, we could "simply" fit a regression model to the data with a SVM. However, we'll implement five different models for comparison. The first two use the linear kernel with differing values for epsilon, the default value of 0.1 and the value of 0.2, respectively. Model 3 uses the polynomial kernel of degree 3. Model 4 uses the sigmoid kernel and cost constant, "C=2". Model 5 uses the radial basis kernel and cost constant, "C=3".
+
+### Kernels
+Kernels or kernel functions are sets of different types of algorithms that are used for pattern analysis. They are used to solve a non-linear problem by using a linear classifier. Kernels Methods are employed in SVMs, which are used in classification and regression problems. The SVM uses what is called a “Kernel Trick” where the data is transformed and an optimal boundary is found for the possible outputs. That is, it transforms the training set of data so that a non-linear decision surface is able to transform to a linear equation in a higher number of dimension spaces.
+
+### Types of Kernels
+The **Linear** kernel is useful when dealing with large sparse data vectors. It is often used in text categorization. The splines kernel also performs well in regression problems. Equation is: .
+
+$K(x,y)=(x.y)$
+  
+The **Polynomial** kernel represents the similarity of vectors in the training set of data in a feature space over polynomials of the original variables used in the kernel. It is popular in image processing. The equation is:
+
+$K(x,y)=tanh(\gamma x^T y + c)^d$
+
+where $c$ is a coefficient, $d$ is the degree of the polynomial, and $\gamma>0$.
+
+The **Radial Basis** kernel is a general-purpose kernel, used when there is no prior knowledge about the data. The equation is:
+
+$K(x_i,x_j)=exp(-\gamma||x_i-x_j||^2)$
+
+for $\gamma>0$. This is also known as the Gaussian radial basis function (RPF). The equation is:
+
+The **Sigmoid** or **Hyperbolic** kernel function is equivalent to a two-layer, perceptron model of the neural network, which is used as an activation function for artificial neurons. The equation is:
+
+$K(x,y)=tanh(\gamma x^T y + c)$
+
+where $c$ is a coefficient.
+
+the value $\gamma
+
+```{r}
+#set.seed(1346)
+#modelsvm1 = svm(Y_train~X_train)
+#modelsvm2 = svm(Y_train~X_train, epsilon=0.2)
+#modelsvm3 = svm(Y_train~X_train, kernal="polynomial", degree=3, coef0=1, gamma=0.1, epsilon=0.2)
+#modelsvm4 = svm(Y_train~X_train, kernel="sigmoid", gamma=0.001, epsilon=0.4, coef0=1, cost=20)
+#modelsvm5 = svm(Y_train~X_train, kernel="radial", gamma=0.001, epsilon=0, cost=10)
+
+modelsvm4 = svm(Y~X, kernel="sigmoid", gamma=0.001, epsilon=0.4, coef0=1, cost=20)
+predYsvm4 = predict(modelsvm4, X)
+mae4<-mae(predYsvm4, Y)
+rmse4<-rmse(predYsvm4,Y)
+print(paste("SVR 4 Metrics: MAE=",mae4,"RMSE=",rmse4))
+```
+
+### Prediction using SVR
+Now, we use the `preduct` function to cross-validate the models.
+
+```{r}
+#predYsvm1 = predict(modelsvm1, X_cv)
+#predYsvm2 = predict(modelsvm2, X_cv)
+#predYsvm3 = predict(modelsvm3, X_cv)
+predYsvm4 = predict(modelsvm4, X_cv)
+#predYsvm5 = predict(modelsvm5, X_cv)
+```
+### SVR Model Metrics
+Here, we use `ModelMetrics` to generate values for Mean Absolute Error (MAE) and Root Mean Square Error (RMSE). Then, we print them using the `print-past` combo.
+
+```{r}
+library(ModelMetrics)
+#mae1<-mae(predYsvm1, Y_cv)
+#mae2<-mae(predYsvm2, Y_cv)
+#mae3<-mae(predYsvm3, Y_cv)
+mae4<-mae(predYsvm4, Y_cv)
+#mae5<-mae(predYsvm5, Y_cv)
+#rmse1<-rmse(predYsvm1,Y)
+#rmse2<-rmse(predYsvm2,Y)
+#rmse3<-rmse(predYsvm3,Y)
+rmse4<-rmse(predYsvm4,Y)
+#rmse5<-rmse(predYsvm5,Y)
+#print(paste("SVR 1 Metrics: MAE=",mae1,"RMSE=",rmse1))
+#print(paste("SVR 2 Metrics: MAE=",mae2,"RMSE=",rmse2))
+#print(paste("SVR 3 Metrics: MAE=",mae3,"RMSE=",rmse3))
+print(paste("SVR 4 Metrics: MAE=",mae4,"RMSE=",rmse4))
+#print(paste("SVR 5 Metrics: MAE=",mae5,"RMSE=",rmse5))
+```
+
+### Results
+Now, although the metrics appear to be close in comparison, we know that the data is not linear and we do not need the computational savings afforded by the linear kernel. We also know that the radial basis kernel in not needed since we know a good bit about the data. Finally, we know that JHUAPL had some success with neural network models, and since the sigmoid kernel model is a good proxy for a neural network (perceptron) model, we'll use this model and do some fine tuning to find an optimal model. But, first, here is a model summary.
+
+```{r}
+summary(modelsvm4)
+RMSEsvm=rmse(predYsvm4,Y)
+print(paste("RMSE =",RMSEsvm))
+print(paste("MAE =",mae(predYsvm4, Y_cv)))
+# Coefficients
+W = t(modelsvm4$coefs) %*% modelsvm4$SV
+#Find value of b
+b = modelsvm4$rho
+print(paste("intercept=",b))
+drop<-"class"
+print(paste(names(ion_data[,!(names(ion_data)%in% drop)]),W))
+```
+
+## Tune the SVM model
+Here, we tune SVR model with the sigmoid kernel by varying the $\epsilon$, coef0, and cost parameters, while holding the $\gamma$ parameter constant at 0.001. While, we could increase the range of the cost parameter, it would use much more computational effort than we need to spend here.
+
+```{r}
+OptModelsvm=tune(svm, Y~X, data=ion_data, kernel="sigmoid", ranges=list(epsilon=seq(0,1,0.1), gamma=0.001, coef0=1:10, cost=1:20))
+```
+
+### Best SVR Model Summary
+So, our best model is defined by:
+
+`svm(Y~X, kernel="sigmoid", gamma=0.001, epsilon=0.4, coef0=1, cost=20)`
+
+To get a thorough model summary, we need to extract the best model from `OptModelsvm`, fetch the best model parameters, get predictions using the best model and the cross-validation feature data, and calculate model metrics using the predictions and the actuals from the cross-validation response data. Then well extract the coefficients and intercept values for the best model. Finally, we'll print all of this information. 
+
+```{r}
+# Select the best model out of 1100 trained models
+## Find out the best model
+BstModel = OptModelsvm$best.model
+## Get the best model paramters
+BstParams = OptModelsvm$best.parameters
+## Predict Y using best model
+PredYBst = predict(BstModel,X_cv)
+## Calculate RMSE of the best model 
+MAEBst  = mae(PredYBst,Y_cv)
+RMSEBst = rmse(PredYBst,Y_cv)
+
+# Calculate parameters of the Best SVR model
+## Find value of W
+W = t(BstModel$coefs) %*% BstModel$SV
+## Find value of b
+b = BstModel$rho
+
+print("BEST SVR MODEL SUMMAY")
+print('---------------------------------------------------')
+print("BEST MODEL PARAMETERS")
+print(paste("Best SVR epsilon:",BstParams$elsilon))
+print(paste("Best SVR gamma:",BstParams$gamma))
+print(paste("Best SVR coef0:",BstParams$coef0))
+print(paste("Best SVR cost:",BstParams$cost))
+print('---------------------------------------------------')
+print("BEST MODEL PERFORMANCE METRICS")
+print(paste("Best SVR Metrics: MAE  =",MAEBst))
+print(paste("Best SVR Metrics: RMSE =",RMSEBst))
+print('---------------------------------------------------')
+print("BEST MODEL COEFFICIENTS")
+print(paste("intercept=",b))
+drop<-"class"
+print(paste(names(ion_data[,!(names(ion_data)%in% drop)]),W))
+```
+
+### Overlay SVM Predictions on Scatter Plot
+This is a messy 2-dimensional plot of multidimensional data. You may see why a 33-dimensional hyperplane spans the data.
+
+```{r, fig.width=6, fig.height=6}
+modelsvm_a = svm(Y~X)
+predYsvm_a=predict(modelsvm_a, X)
+plot.new()
+points(ion_data$pulse_a_9, predYsvm_a, col = "red4", pch=16)
+points(ion_data$pulse_b_9, predYsvm_a, col = "blue4", pch=16)
+points(ion_data$pulse_a_11, predYsvm_a, col = "green4", pch=16)
+points(ion_data$pulse_b_11, predYsvm_a, col = "orange4", pch=16)
+points(ion_data$pulse_a_13, predYsvm_a, col = "purple", pch=16)
+points(ion_data$pulse_b_13, predYsvm_a, col = "gray2", pch=16)
+points(ion_data$pulse_a_15, predYsvm_a, col = "magenta", pch=16)
+points(ion_data$pulse_b_15, predYsvm_a, col = "cyan", pch=16)
+points(ion_data$pulse_a_17, predYsvm_a, col = "pink", pch=16)
+points(ion_data$pulse_b_17, predYsvm_a, col = "yellow2", pch=16)
+points(ion_data$pulse_a_19, predYsvm_a, col = "lightblue", pch=16)
+points(ion_data$pulse_b_19, predYsvm_a, col = "darkgray", pch=16)
+points(ion_data$pulse_a_21, predYsvm_a, col = "lavender", pch=16)
+points(ion_data$pulse_b_21, predYsvm_a, col = "lightgray", pch=16)
+points(ion_data$pulse_a_23, predYsvm_a, col = "purple2", pch=5, lwd=2)
+points(ion_data$pulse_b_23, predYsvm_a, col = "blue1", pch=7, lwd=2)
+points(ion_data$pulse_a_25, predYsvm_a, col = "purple1", pch=7, lwd=2)
+points(ion_data$pulse_b_25, predYsvm_a, col = "gray", pch=2, lwd=3)
+points(ion_data$pulse_a_27, predYsvm_a, col = "green3", pch=5, lwd=2)
+points(ion_data$pulse_b_27, predYsvm_a, col = "lavender", pch=6, lwd=2)
+points(ion_data$pulse_a_29, predYsvm_a, col = "purple2", pch=4, lwd=2)
+points(ion_data$pulse_b_29, predYsvm_a, col = "blue2", pch=2, lwd=3)
+points(ion_data$pulse_a_31, predYsvm_a, col = "purple3", pch=5, lwd=2)
+points(ion_data$pulse_b_31, predYsvm_a, col = "yellow", pch=6, lwd=3)
+points(ion_data$pulse_a_31, predYsvm_a, col = "red2", pch=8, lwd=2)
+points(ion_data$pulse_b_31, predYsvm_a, col = "green2", pch=8, lwd=2)
+```
+
+## References
+
+[1] Sigillito, V. G.; Wing, S. P.; Hutton, L. V.; Baker, K. B. (1989). Classification of Radar Returns from the Ionosphere Using Neural Networks. Johns Hopkins APL Technical Digest, 10(3), 262-266. https://doi.org/10.1029/2003RS002869
+[2] Sigillito, V. G.; Wing, S. P.; Hutton, L. V.; Baker, K. B.; Greenwald, R. A. (2003). Neural networks for automated classification of ionospheric irregularities in HF radar backscattered signals. Radio Science, 38(4).
+

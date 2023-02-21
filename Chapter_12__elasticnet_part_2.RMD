@@ -1,0 +1,381 @@
+---
+title: "ElasticNet Regression Part I"
+author: "Jeffrey Strickland"
+date: '2022-08-28'
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+
+
+## Data Preprocessing
+To start, we’ll load the data from the data we saved earlier.
+
+## Load Libraries
+
+```{r}
+# ggplot for system for 'declaratively' creating graphics [2]
+library(ggplot2) 
+# dplyrfor the grammar of data manipulation (i.e., %>%, the pipe operator)
+library(dplyr) 
+# superml provides a scikit-learn's fit, predict interface to train machine learning models in R
+library(superml) 
+# readr for reading and writing files (.csv) in R
+library(readr)  
+# glmnet for fitting generalized linear models via penalized maximum likelihood.
+library(glmnet)
+# plyr for the split-apply-combine paradigm for R
+library(plyr)
+# for miscellaneous functions for training and plotting classification and regression models
+library(caret) 
+# Metrics provides evaluation metrics in R that are commonly used in supervised machine learning.
+library(Metrics)
+# rsq for generalized R-squared, partial R-squared, and partial correlation coefficients for generalized linear models and linear (mixed) models
+library(rsq)
+# knitr for R markdown and fancy output like tables
+library(knitr)
+```
+
+### Import Data
+The data is the same data we used in the chapter on Ridge and Lasso Regression. Recall that we used data from the set for predict satellite survivability using multiple variables.
+
+```{r}
+library(glmnet)
+train<-read.csv("C:\\Users\\jeff\\Documents\\Data\\Survive.csv") #Import the train set
+
+train$RSO_Weight[is.na(train$RSO_Weight)] <- mean(train$RSO_Weight, na.rm = TRUE)
+train$RSO_Density[is.na(train$RSO_Density)] <- "Low"
+train$RSO_Visibility[train$RSO_Visibility == 0] <- mean(train$RSO_Visibility)
+train$RSO_MRP[is.na(train$RSO_MRP)] <- mean(train$RSO_MRP, na.rm = TRUE)
+train$Orbit_Establishment_Year=2013 - train$Orbit_Establishment_Year
+train$Orbit_Height[is.na(train$Orbit_Height)] <- "LEO"
+train$Stealth_Type[is.na(train$Stealth_Type)] <- "Stealth_1"
+train$RSO_Type[is.na(train$RSO_Type)] <- "RSO_Type1"
+```
+
+### Drop Unecessary Variable
+There are two binary identifier variable that we do not need and would not perform well in a regression model. They are better suited for classification.
+
+```{r}
+drop <- c("RSO_Identifier", "Orbit_Identifier")
+train = train[,!(names(train) %in% drop)]
+#head(train,5)
+```
+
+### Label Encoding
+Here, we encode our categorical response variable into integer values (0,1), because all machine learning models require the data to be encoded into numerical format. LabelEncoder(), from the superml-package takes a vector of character or factor values and encodes them into numeric values.
+
+```{r}
+#library(superml)
+lbl = LabelEncoder$new()
+train$RSO_Type = lbl$fit_transform(train$RSO_Type)
+train$RSO_Name = lbl$fit_transform(train$RSO_Name)
+train$RSO_Density = lbl$fit_transform(train$RSO_Density)
+train$Orbit_Height = lbl$fit_transform(train$Orbit_Height)
+train$Stealth_Type = lbl$fit_transform(train$Stealth_Type)
+#train$Orbit_Identifier = lbl$fit_transform(train$Orbit_Identifier)
+#train$RSO_Identifier = lbl$fit_transform(train$RSO_Identifier)
+```
+
+### Normalizing
+Normaliziing data allows us to analyze and model data that are of the same/similar scale, which makes model more accurate.
+
+```{r}
+train$RSO_Type = (train$RSO_Type-(mean(train$RSO_Type))/sd(train$RSO_Type))
+train$RSO_Name = (train$RSO_Name-(mean(train$RSO_Name))/sd(train$RSO_Name))
+train$RSO_Density = (train$RSO_Name-(mean(train$RSO_Density))/sd(train$RSO_Density))
+#train$RSO_Type = (train$RSO_Type-(mean(train$RSO_Type))/sd(train$RSO_Type))
+train$Stealth_Type = (train$Stealth_Type-(mean(train$Stealth_Type))/sd(train$Stealth_Type))
+train$Orbit_Height = (train$Orbit_Height - (mean(train$Orbit_Height))/ sd(train$Orbit_Height))
+#train$RSO_Identifier = (train$RSO_Identifier - (mean(train$RSO_Identifier))/ sd(train$RSO_Identifier))
+#summary(train)
+```
+
+### Write and Read the Data
+
+To preserve the transformations we made on the data, it is wise to store it to protect the original data. Then we'll read the same data back in our environment.
+
+```{r}
+#set.seed(222)
+setwd("C:/Users/jeff/Documents/Data")
+write_csv(train,"sun_data.csv")
+surv_data<-read_csv("C:/Users/jeff/Documents/Data/surv2_data.csv")
+head(surv_data,5)
+```
+
+## Remove Rows with NA
+Even though we have preprocessed the data for miss values, there are probably missing values in our coolection.
+
+```{r}
+train <- train[rowSums(is.na(train)) == 0, ]
+```
+
+### Split the Data into Subsets 
+Finally, we split the set into the training set and the cross-validation set, which will complete our data preprocessing.
+
+```{r}
+set.seed(567)
+part <- sample(2, nrow(X), replace = TRUE, prob = c(0.7, 0.3))
+X_train<- X[part == 1,]
+X_cv<- X[part == 2,]
+
+Y_train<- Y[part == 1,]
+Y_cv<- Y[part == 2,]
+
+```
+
+### Initial Lambda
+Here we assign an initial $\lambda$ value for both the ridge and lasso regression  models.
+
+```{r}
+lambda <- 10^seq(10, -2, length = 100)
+```
+
+### Ridge Regression Model
+
+We start with the Ridge regression that we learned about in Chapter  
+
+```{r}
+ridge_reg <- cv.glmnet(X[X_train,], Y[X_train], alpha = 0, lambda = lambda)
+#ridge_reg <- glmnet(X, Y, alpha = 0, lambda = lambda)
+#find the best lambda via cross validation
+bestlam <- ridge_reg$lambda.min
+ridge.pred <- predict(ridge_reg, llambda = bestlam, newx = X)
+ridge.cv <- predict(ridge_reg, llambda = bestlam, newx = X_cv)
+```
+
+### Ridge Model Performance
+Next, we check the model performance that will use for comparison with our methods.
+
+```{r}
+SSE <- sum((ridge.pred - Y_train)^2)
+SSE_val <- sum((ridge.cv - Y_cv)^2)
+SSR <- sum((Y_train - mean(Y_train))^2)
+SSR_val <- sum((Y_cv - mean(Y_cv))^2)
+SST <- SSR + SSE
+SST_val<-SSR_val+SSE_val
+Ridge_R_sq <- SSR / SST
+Ridge_RMSE = sqrt(SSE/nrow(X_train))
+Ridge_val_R_sq <- SSR_val / SST_val
+Ridge_val_RMSE = sqrt(SSE_val/nrow(X_cv))
+print(paste("Ridge R-square =", Ridge_R_sq))
+print(paste("Ridge Regression RMSE =", Ridge_RMSE))
+print(paste("Ridge CV R-square =", Ridge_val_R_sq))
+print(paste("Ridge CV RMSE =", Ridge_val_RMSE))
+```
+
+## Lasso Regression Model
+Now, we fit a lasso regression model to the same sun azimuth data.
+
+```{r}
+lasso_reg <- glmnet(X[X_train,], Y[X_train], alpha = 1, lambda = lambda)
+lasso.pred <- predict(lasso_reg, s = bestlam, newx = X[X_cv,])
+SSE <- sum((lasso.pred - Y)^2)
+SSR <- sum((Y[X_cv] - mean(Y[X_cv]))^2)
+SST <- SSR + SSE
+R_square <- SSR / SST
+Lasso_RMSE = sqrt(SSE/nrow(Y))
+print(paste("Lasso R-square =",R_square))
+print(paste("Lasso Regression RMSE =", Lasso_RMSE))
+print(paste("Ridge Regression RMSE =", Ridge_RMSE))
+```
+
+### Optimal Lambda
+Here we assign an initial lambda value for the Ridge and Lasso models. The system, like `optimal_lambda`.
+
+```{r}
+optimal_lambda <- cv_lasso$lambda.min
+glmnet(X[X_train,], Y[X_train], alpha = 1, family = 'gaussian', lambda = optimal_lambda, thresh = 1e-07)
+lasso.pred <- predict(lasso_reg, s = optimal_lambda, newx = X)
+lasso.cv <- predict(lasso_reg, s = optimal_lambda, newx = X_cv)
+```
+
+### Lasso Model Performance
+Finally, we obtain the performance of the Lasso model for comparison with the other models.
+
+```{r}
+SSE <- sum((lasso.pred - Y_train)^2)
+SSE_val <- sum((lasso.cv - Y_cv)^2)
+SSR <- sum((Y_train - mean(Y_train))^2)
+SSR_val <- sum((Y_cv - mean(Y_cv))^2)
+SST <- SSR + SSE
+SST_val<-SSR_val+SSE_val
+Lasso_R_sq <- SSR / SST
+Lasso_RMSE = sqrt(SSE/nrow(X_train))
+Lasso_val_R_sq <- SSR_val / SST_val
+Lasso_val_RMSE = sqrt(SSE_val/nrow(X_cv))
+print(paste("Lasso R-square =", Lasso_R_sq))
+print(paste("Lasso Regression RMSE =", Lasso_RMSE))
+print(paste("Lasso CV R-square =", Lasso_val_R_sq))
+print(paste("Lasso CV RMSE =", Lasso_val_RMSE))
+```
+
+## ElaticNet Regression Model
+Without much fanfare, we expose the ElasticNet Regression, which`discuss in more detail in Part II of this chapter.
+
+### Training and Testing Data Split
+Here we perform a dataset split that well use at the very end of this section for the purpose of validating the model.
+
+```{r}
+ind <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+train <- train[ind==1,]
+test <- train[ind==2,]
+```
+
+### creating Custom Control Parameters
+This "helper" function redusce the complecty in defining the ElasticNet model we will connstruct.
+
+```{r}
+control <- trainControl(method = "repeatedcv",
+                              number = 5,
+                              repeats = 5,
+                              search = "random",
+                              verboseIter = TRUE)
+```
+
+### Training ELastic Net Regression model
+
+```{r,  results='hide'}
+elastic_model <- train(Survivability ~ .,
+                           data = train,
+                           method = "glmnet",
+                           #preProcess = c("center", "scale"),
+                           tuneLength = 10,
+                           trControl = control)
+```
+
+### Print Elastic Model Results
+
+```{r}
+elastic_model
+```
+
+### Find Best Values
+
+```{r}
+set.seed(123)
+
+# Train Control
+train.control <- trainControl(method = "repeatedcv", number = 10, repeats = 10 , search = "random")
+
+# Train the Model
+cv_for_best_value <- train(Survivability ~ ., data = train, method="glmnet", trControl = train.control)
+
+# Obtaining Best Value of $\alpha$ and $\lambda$
+cv_for_best_value$bestTune
+```
+
+
+# Alternative Performance Function
+Here, we constructed a user defined function to compute $R^2$ and RMSE for true and predicted values
+
+```{r}
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  # Model performance metrics
+data.frame(
+  RMSE = RMSE,
+  Rsquare = R_square
+)
+}
+```
+
+
+### Implement Best Values
+
+```{r}
+sun_elnet <- glmnet(X, Y, alpha =cv_for_best_value$bestTune$alpha , lambda = cv_for_best_value$bestTune$lambda ,family = "gaussian")
+sun_elnet
+  
+# Model Prediction
+elnet_pred <- predict(cv_for_best_value, X)
+eval<-eval_results(Y, elnet_pred, X)
+  
+# Multiple R-squared
+rsq <- cor(X, elnet_pred)^2
+rsq
+
+### Plot ElasticNet Model
+ 
+# Plot
+plot(cv_for_best_value, pch=16, cex = 2, main = "Elastic Net Regression") 
+
+```
+
+### Model Performance
+
+```{r}
+library(Metrics)
+library(rsq)
+mean(cv_for_best_value$resample$RMSE)
+mean(cv_for_best_value$resample$Rsquared)
+mean(cv_for_best_value$resample$MAE)
+```
+
+### Plot Variable Importance
+
+```{r}
+plot(varImp(cv_for_best_value), pch=16, lwd = 2, cex = 2)
+```
+
+### Use Alternative Performance Function
+
+```{r}
+Elnet_RMSE <- eval$RMSE
+Elnet_R_sq <- eval$Rsquare
+
+tab_01 = data.frame(
+  Measure = c("Lasso RMSE", "Lasso R.Sq", "Ridge RMSE", "Ridge R.Sq", "Elnet RMSE", "Elnet R.Sq"),
+  Value  = c(Lasso_RMSE, Lasso_R_sq, Ridge_RMSE, Ridge_R_sq, Elnet_RMSE, Elnet_R_sq)
+)
+
+knitr::kable(tab_01, digits = 6)
+```
+
+### Performance Table
+
+```{r}
+A<-rbind(Lasso_R_sq, Ridge_R_sq, Elnet_R_sq) %>% round(7)
+B<-rbind(Lasso_RMSE, Ridge_RMSE, Elnet_RMSE) %>% round(7)
+D<-cbind(A, B)
+C<-cbind("R.Square", "RMSE")
+rbind(C,D)
+```
+
+So, how did we get a negative $R^2$ value? In short, $R^2$ is only the square of correlation if we happen to be (1) using linear regression models, and (2) are evaluating them on the same data they are fitted. 
+
+# Compute R^2 from true and predicted values
+
+```{r}
+elnet_pred <- predict(cv_for_best_value, testing)
+eval<-eval_results(testing$Survivability, elnet_pred, testing)
+eval
+```
+
+
+```{r}
+mod1<-glmnet(X, Y, alpha=0, family = "gaussian")
+print(paste("Variable: Intercept =", mod1.coef[1]))
+print(paste("Variable:", names(data01), "=", 
+mod1.coef[2:43]))
+barplot(mod1.coef, main = "Model 1 Coefficients", ylab = "Coefficients", las = 2)
+plot(mod1, lwd = 3)
+```
+
+
+```{r}
+mod2<-cv.glmnet(X, Y, alpha=0, nfolds=5, type.measure = "mse")
+summary(mod2)
+mod2.coef <- predict(mod1, type = "coefficients", s = bestlam)[1:43]
+print(paste("Variable: Intercept =", mod2.coef[1]))
+print(paste("Variable:", names(data01), "=", 
+mod2.coef[2:43]))
+barplot(mod2.coef, main = "Model 2 Coefficients", ylab = "Coefficients", las = 2)
+plot(mod2, lwd = 2)
+```

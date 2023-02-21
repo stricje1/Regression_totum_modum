@@ -1,0 +1,442 @@
+---
+title: "ElasticNet Regression Part I"
+author: "Jeffrey Strickland"
+date: '2022-08-28'
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## Intoduction to ElasticNet Regression
+Elastic Net is another regularization technique that uses L1 and L2 regularizations. Elastic Net improves your model's predictions by combining feature elimination from Lasso with feature coefficient reduction from the Ridge model. When dealing with multicollinearity, the elastic Net is highly effective, and it outperforms both lasso and ridge regression in most cases.
+
+This chapter is divided into two parts. In part I, we use Landsat-8 data we explored in Polynomial Regression and use it to compare Ridge, Lasso, and ElasticNet regression models.  In part II, we go into more detail on ElasticNet Regression and use the Survivability data we explored earlier using the Ridge and Lasso regressions. So, we get another comparison.
+
+### Global $θ_sz$ Metadata Records for Landsat-8 and Sentinel-2A/2B
+
+Recall from the Polynomial Regression chapter, we used data from the U.S. Geological Survey (USGS) website. Summarizing here, the following information in each Landsat-8 metadata record was used: “sceneStart,” “sceneStop,” “sunEle,” “$ce_{x}$,” and “$ce_{y}$.” The scene center acquisition time (Act) for each record was computed as the average of the “sceneStart” and “sceneStop” times, and the scene center qsz was derived as $90^{o}$—“sunEle.” The scene center latitude (Lat) and scene center longitude (Lon) coordinates were defined as “$ce_{x}$” and “$ce_{y}$”, respectively, in each metadata record.
+
+## Data Preprocessing
+To start, we’ll load the R packages needed, as well as the data from the data we saved earlier.
+
+## Load Libraries
+Here we load the packages we'll need for solving this problem.
+
+```{r}
+# ggplot for system for 'declaratively' creating graphics [2]
+library(ggplot2) 
+# dplyrfor the grammar of data manipulation (i.e., %>%, the pipe operator)
+library(dplyr) 
+# superml provides a scikit-learn's fit, predict interface to train machine learning models in R
+library(superml) 
+# readr for reading and writing files (.csv) in R
+library(readr)  
+# glmnet for fitting generalized linear models via penalized maximum likelihood.
+library(glmnet)
+# plyr for the split-apply-combine paradigm for R
+library(plyr)
+# for miscellaneous functions for training and plotting classification and regression models
+library(caret) 
+# Metrics provides evaluation metrics in R that are commonly used in supervised machine learning.
+library(Metrics)
+# rsq for generalized R-squared, partial R-squared, and partial correlation coefficients for generalized linear models and linear (mixed) models
+library(rsq)
+# knitr for R markdown and fancy outbut like tables
+library(knitr)
+```
+
+### Load the Data
+Now, we'll load the Landsat-8 data, remove missing/NA values, and summarize the outcome.
+
+```{r}
+set.seed(123)
+file<-"C:\\Users\\jeff\\Documents\\Data\\LANDSAT_OT_C2_L1.csv"
+data <- read_csv(file)
+data01<-na.omit(data) 
+summary(data01)
+nrow(data01)
+```
+### Random Sample
+Now, we want to create a random subset of the data to train and cross-validate our model. Since there are 1,949,654 rows of data, we'll only need a small portion of them.
+
+```{r}
+sun_dat <- data01[sample(nrow(data01), size=50000), ]
+head(sun_dat,6)
+names(sun_dat)
+```
+
+### Drop Unecessary Variables
+Many of the variables in the data set are not relevant to sun azimuth, since the data primarily concerns Landsat-8 imagery resolution. So, we'll remove them here.
+
+```{r}
+drop <- c("Station Identifier", "Sensor Identifier", "Browse Link", "Display ID", "Ordering ID", "Landsat Scene Identifier", "Landsat Product Identifier L1", "Collection Category", "Collection Number", "Date Product Generated L1", "Nadir/Off Nadir", "Ground Control Points Version", "Processing Software Version", "TIRS SSM Model", "Data Type L1", "Product Map Projection L1", "Satellite", "RLUT File Name", "Image Quality", "Datum", "Ellipsoid", "Grid Cell Size Panchromatic", "Grid Cell Size Reflective", "Grid Cell Size Thermal", "Bias Parameter File Name OLI", "Bias Parameter File Name TIRS", "Calibration Parameter File", "Start Time", "Stop Time", "Corner Upper Left Latitude", "Corner Upper Left Longitude", "Corner Upper Right Latitude", "Corner Upper Right Longitude",  "Corner Lower Left Latitude", "Corner Lower Left Longitude", "Corner Lower Right Latitude", "Corner Lower Right Longitude")
+sun_data = sun_dat[!(names(sun_dat) %in% drop)]
+names(sun_data)
+```
+
+### Filter Daylight Records
+Now, we set the day-night flag to "Day" and the sun azimuth to non-negative values.
+
+```{r}
+sun_data <- sun_data[sun_data["Day/Night Indicator"]=="DAY", ]
+sun_data <- sun_data[sun_data["Sun Azimuth L0RA"]>0, ]
+drop <- c("Day/Night Indicator")
+sun_data = sun_data[!(names(sun_data) %in% drop)]
+```
+
+### Shorten Variable Names
+Shortening some variable names will simply our work ahead. We'll also get a record count (number of rows) to use in choosing a random sample from the data.
+
+```{r}
+library(data.table)
+setnames(sun_data, old = c("UTM Zone", "Date Acquired", "WRS Path", "WRS Row", "Roll Angle", "Scene Cloud Cover L1", "Land Cloud Cover", "Geometric RMSE Model", "Geometric RMSE Model X", "Geometric RMSE Model Y", "Sun Elevation L0RA", "Sun Azimuth L0RA", "Ground Control Points Model", "Panchromatic Lines", "Panchromatic Samples", "Reflective Lines", "Reflective Samples", "Thermal Lines", "Thermal Samples", "Scene Center Longitude", "Scene Center Latitude"), new = c("UTM_Zone", "Date_Acq", "WRS_Path", "WRS_Row", "Roll_Angle", "Scene_Cloud", "Land_Cloud", "Geom_RMSE_Mod", "Geom_RMSE_Mod_X", "Geom_RMSE_Mod_y", "Sun_Elv", "Sun_Az", "Grnd_Control_Pts", "Panchrom_Lines", "Panchrom_Samps", "Reflective_Lines", "Reflective_Samps", "Thermal_Lines", "Thermal_Samps", "Center_Lon", "Center_Lat"))
+names(sun_data)
+```
+
+Now, we want to check the data structure to ensure the data looks like we expected.
+
+```{r}
+str(sun_data)
+```
+
+### Elapsed Time Since Acquired
+Here, we calculate the elapsed time since date acquired in the period March 2013 to August 2022. So, we add a Date column called `new` and subtract the the `Date_Acq` column, convert the dates to number of days (as numeric) and then we drop `new` and `Date_Acq`.
+
+```{r}
+library(zoo)
+s <- nrow(sun_data)
+new <- c("2022-08-07")
+sun_data$new <- new
+sun_data$new <- as.Date(sun_data$new)
+sun_data$Duration = sun_data$new-sun_data$Date_Acq
+head(sun_data["Duration"],10)
+drop <- c("Date_Acq","new")
+sun_data = sun_data[!(names(sun_data) %in% drop)]
+sun_data$Duration<-as.numeric(sun_data$Duration)
+summary(sun_data)
+```
+
+### Normalize all Data
+The goal of data normalization is twofold:
+
+1. Data normalization is the organization of data to appear similar across all records and fields.
+    
+2. It increases the cohesion of entry types leading to cleansing, lead generation, segmentation, and higher quality data.
+
+Here, we normalize the data by calculating:
+
+$X_Norm(i) = \frac{(X_i - \overline{X})}{sd(X)}$
+
+```{r}
+sun_data$WRS_Path <- (sun_data$WRS_Path-mean(sun_data$WRS_Path))/ sd(sun_data$WRS_Path)
+sun_data$WRS_Row <- (sun_data$WRS_Row-mean(sun_data$WRS_Row))/ sd(sun_data$WRS_Row)
+sun_data$Roll_Angle <- (sun_data$Roll_Angle- mean(sun_data$Roll_Angle))/ sd(sun_data$Roll_Angle)
+sun_data$Land_Cloud <- (sun_data$Land_Cloud-mean(sun_data$Land_Cloud))/ sd(sun_data$Land_Cloud)
+sun_data$Scene_Cloud <- (sun_data$Scene_Cloud-mean(sun_data$Scene_Cloud))/ sd(sun_data$Scene_Cloud)
+sun_data$Grnd_Control_Pts <- (sun_data$Grnd_Control_Pts- mean(sun_data$Grnd_Control_Pts))/ sd(sun_data$Grnd_Control_Pts)
+sun_data$Geom_RMSE_Mod <- (sun_data$Geom_RMSE_Mod- mean(sun_data$Geom_RMSE_Mod))/ sd(sun_data$Geom_RMSE_Mod)
+sun_data$Geom_RMSE_Mod_X <- (sun_data$Geom_RMSE_Mod_X- mean(sun_data$Geom_RMSE_Mod_X))/ sd(sun_data$Geom_RMSE_Mod_X)
+sun_data$Geom_RMSE_Mod_y <- (sun_data$Geom_RMSE_Mod_y- mean(sun_data$Geom_RMSE_Mod_y))/ sd(sun_data$Geom_RMSE_Mod_y)
+sun_data$Sun_Elv <- (sun_data$Sun_Elv-mean(sun_data$Sun_Elv))/ sd(sun_data$Sun_Elv)
+sun_data$Sun_Az <- (sun_data$Sun_Az- mean(sun_data$Sun_Az))/ sd(sun_data$Sun_Az)
+sun_data$Panchrom_Lines <- (sun_data$Panchrom_Lines- mean(sun_data$Panchrom_Lines))/ sd(sun_data$Panchrom_Lines)
+sun_data$Panchrom_Samps <- (sun_data$Panchrom_Samps- mean(sun_data$Panchrom_Samps))/ sd(sun_data$Panchrom_Samps)
+sun_data$Reflective_Lines <- (sun_data$Reflective_Lines- mean(sun_data$Reflective_Lines))/ sd(sun_data$Reflective_Lines)
+sun_data$Reflective_Samps <- (sun_data$Reflective_Samps- mean(sun_data$Reflective_Samps))/ sd(sun_data$Reflective_Samps)
+sun_data$Thermal_Lines <- (sun_data$Thermal_Lines- mean(sun_data$Thermal_Lines))/ sd(sun_data$Thermal_Lines)
+sun_data$Thermal_Samps <- (sun_data$Thermal_Samps- mean(sun_data$Thermal_Samps))/ sd(sun_data$Thermal_Samps)
+sun_data$UTM_Zone <- (sun_data$UTM_Zone- mean(sun_data$UTM_Zone))/ sd(sun_data$UTM_Zone)
+sun_data$Center_Lat <- (sun_data$Center_Lat- mean(sun_data$Center_Lat))/ sd(sun_data$Center_Lat)
+sun_data$Center_Lon <- (sun_data$Center_Lon- mean(sun_data$Center_Lon))/ sd(sun_data$Center_Lon)
+sun_data$Duration <- (sun_data$Duration- mean(sun_data$Duration))/ sd(sun_data$Duration)
+
+summary(sun_data)
+```
+
+### Write Data to Local Drive
+Next, we write the preprocessed data to a local drive, to preserve our work.
+
+```{r}
+setwd("C:/Users/jeff/Documents/Data")
+write_csv(sun_data,"sun_data.csv")
+```
+
+### Import Data
+Now, we import the data we saved.
+
+```{r}
+train<-read_csv("C:/Users/jeff/Documents/Data/sun_data.csv")
+head(sun_data,5)
+```
+
+## Remove Rows with NA
+Even though we have preprocessed the data for miss values, there are probably missing values in our coolection.
+
+```{r}
+train <- train[rowSums(is.na(train)) == 0, ]
+```
+
+### Split the Data into Subsets 
+Finally, we split the set into the training set and the cross-validation set, which will complete our data preprocessing.
+
+```{r}
+set.seed(567)
+ind <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+training <- train[ind==1,]
+testing <- train[ind==2,]
+
+X <- training %>% 
+     select(-Sun_Az) %>% 
+     scale(center = TRUE, scale = FALSE) %>% 
+     as.matrix()
+Y <- training %>% 
+     select(Sun_Az) %>% 
+     as.matrix()
+X_cv <- testing %>% 
+     select(-Sun_Az) %>% 
+     scale(center = TRUE, scale = FALSE) %>% 
+     as.matrix()
+Y_cv <- testing %>% 
+     select(Sun_Az) %>% 
+     as.matrix()
+
+#X <- model.matrix(Sun_Az~., train1)
+```
+
+### Initial Lambda
+Here we assign an initial $\lambda$ value for both the ridge and lasso regression  models.
+
+```{r}
+lambda <- 10^seq(10, -2, length = 100)
+```
+
+### Ridge Regression Model
+
+We start with the Ridge regression that we learned about in Chapter ### 
+
+```{r}
+ridge_reg <- cv.glmnet(X, Y, alpha = 0, lambda = lambda)
+#ridge_reg <- glmnet(X, Y, alpha = 0, lambda = lambda)
+#find the best lambda via cross validation
+bestlam <- ridge_reg$lambda.min
+ridge.pred <- predict(ridge_reg, llambda = bestlam, newx = X)
+ridge.cv <- predict(ridge_reg, llambda = bestlam, newx = X_cv)
+```
+
+### Ridge Model Performance
+Next, we check the model performance that will use for comparison with our methods.
+
+```{r}
+SSE <- sum((ridge.pred - training$Sun_Az)^2)
+SSE_val <- sum((ridge.cv - testing$Sun_Az)^2)
+SSR <- sum((Y - mean(Y))^2)
+SSR_val <- sum((Y_cv - mean(Y_cv))^2)
+SST <- SSR + SSE
+SST_val<-SSR_val+SSE_val
+Ridge_R_sq <- SSR / SST
+Ridge_RMSE = sqrt(SSE/nrow(Y))
+Ridge_val_R_sq <- SSR_val / SST_val
+Ridge_val_RMSE = sqrt(SSE_val/nrow(Y_cv))
+print(paste("Ridge R-square =", Ridge_R_sq))
+print(paste("Ridge Regression RMSE =", Ridge_RMSE))
+print(paste("Ridge CV R-square =", Ridge_val_R_sq))
+print(paste("Ridge CV RMSE =", Ridge_val_RMSE))
+```
+
+## Lasso Regression Model
+Now, we fit a lasso regression model to the same sun azimuth data.
+
+```{r}
+cv_lasso <- cv.glmnet(X, Y, alpha = 1, lambda = lambda)
+lasso.pred <- predict(cv_lasso, s = lambda, newx = X)
+```
+
+### Optimal Lambda
+Here we assign an initial lambda value for the Ridge and Lasso models. The system, like `optimal_lambda`.
+
+```{r}
+optimal_lambda <- cv_lasso$lambda.min
+lasso_reg = glmnet(X, Y,  alpha = 1, family = 'gaussian', lambda = optimal_lambda, thresh = 1e-07)
+lasso.pred <- predict(lasso_reg, s = optimal_lambda, newx = X)
+lasso.cv <- predict(lasso_reg, s = optimal_lambda, newx = X_cv)
+```
+
+### Lasso Model Performance
+Finally, we obtain the performance of the Lasso model for comparison with the other models.
+
+```{r}
+SSE <- sum((lasso.pred - training$Sun_Az)^2)
+SSE_val <- sum((lasso.cv - testing$Sun_Az)^2)
+SSR <- sum((Y - mean(Y))^2)
+SSR_val <- sum((Y_cv - mean(Y_cv))^2)
+SST <- SSR + SSE
+SST_val<-SSR_val+SSE_val
+Lasso_R_sq <- SSR / SST
+Lasso_RMSE = sqrt(SSE/nrow(Y))
+Lasso_val_R_sq <- SSR_val / SST_val
+Lasso_val_RMSE = sqrt(SSE_val/nrow(Y_cv))
+print(paste("Lasso R-square =", Lasso_R_sq))
+print(paste("Lasso Regression RMSE =", Lasso_RMSE))
+print(paste("Lasso CV R-square =", Lasso_val_R_sq))
+print(paste("Lasso CV RMSE =", Lasso_val_RMSE))
+```
+
+## ElaticNet Regression Model
+Without much fanfare, we expose the ElasticNet Regression, which`discuss in more detail in Part II of this chapter.
+
+### Training and Testing Data Split
+Here we perform a dataset split that well use at the very end of this section for the purpose of validating the model.
+
+```{r}
+ind <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+traning <- train[ind==1,]
+testing <- train[ind==2,]
+```
+
+### creating Custom Control Parameters
+This "helper" function redusce the complecty in defining the ElasticNet model we will connstruct.
+
+```{r}
+control <- trainControl(method = "repeatedcv",
+                              number = 5,
+                              repeats = 5,
+                              search = "random",
+                              verboseIter = TRUE)
+```
+
+### Training ELastic Net Regression model
+Now we use our helper control function and fit as ElasticNet regression model to the data.
+
+```{r,  results='hide'}
+elastic_model <- train(Sun_Az ~ .,
+                           data = train,
+                           method = "glmnet",
+                           #preProcess = c("center", "scale"),
+                           tuneLength = 10,
+                           trControl = control)
+```
+
+### Print Elastic Model Results
+Next, we print the results of the 5-fold cross validation.
+```{r}
+elastic_model
+```
+
+### Find Best Values
+Now, we'll find the best values for $\alpha$ and $\lambda$.
+
+```{r}
+set.seed(123)
+
+# Train Control
+train.control <- trainControl(method = "repeatedcv", number = 10, repeats = 10 , search = "random")
+
+# Train the Model
+cv_for_best_value <- train(Sun_Az ~ ., data = train, method="glmnet", trControl = train.control)
+
+# Obtaining Best Value of $\alpha$ and $\lambda$
+cv_for_best_value$bestTune
+```
+
+### Implement Best Values
+Here are some ways to use the Best CV Value in our analysis.
+
+```{r}
+sun_elnet <- glmnet(X, Y, alpha =cv_for_best_value$bestTune$alpha , lambda = cv_for_best_value$bestTune$lambda ,family = "gaussian")
+sun_elnet
+  
+# Model Prediction
+elnet_pred <- predict(cv_for_best_value, X)
+  
+# Multiple R-squared
+rsq <- cor(X, elnet_pred)^2
+rsq
+```
+
+### Plot ElasticNet Model
+The `cv_for_best_vale` we calculate produces a nice chart.
+
+```{r}
+plot(cv_for_best_value, pch=16, cex = 2, main = "Elastic Net Regression") 
+
+```
+
+### Model Performance
+There are many ways to get the same performance parameters and one of these is found here.
+
+```{r}
+library(Metrics)
+library(rsq)
+print(paste("RMSE =", mean(cv_for_best_value$resample$RMSE)))
+print(paste("R-Sq =", mean(cv_for_best_value$resample$Rsquared)))
+print(paste("MAE  =", mean(cv_for_best_value$resample$MAE)))
+```
+
+# Alternative Performance Function
+Here, we constructed a user defined function to compute $R^2$ and RMSE for true and predicted values
+
+```{r}
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  # Model performance metrics
+data.frame(
+  RMSE = RMSE,
+  Rsquare = R_square
+)
+}
+```
+
+### Plot Variable Importance
+Now, we plot the variable importance for our ElasticNet Regession model.
+
+```{r}
+plot(varImp(cv_for_best_value), pch=16, lwd = 2, cex = 2)
+```
+
+### A knitr Fancy Table
+
+```{r}
+eval<-eval_results(Y, elnet_pred, X)
+Elnet_RMSE <- eval$RMSE
+Elnet_R_sq <- eval$Rsquare
+
+tab_01 = data.frame(
+  Measure = c("Lasso RMSE", "Lasso R.Sq", "Ridge RMSE", "Ridge R.Sq", "Elnet RMSE", "Elnet R.Sq"),
+  Value  = c(Lasso_RMSE, Lasso_R_sq, Ridge_RMSE, Ridge_R_sq, Elnet_RMSE, Elnet_R_sq)
+)
+
+knitr::kable(tab_01, digits = 6)
+```
+
+### Alternate Comparison Table
+
+```{r}
+A<-rbind(Lasso_R_sq, Ridge_R_sq, Elnet_R_sq) %>% round(7)
+B<-rbind(Lasso_RMSE, Ridge_RMSE, Elnet_RMSE) %>% round(7)
+D<-cbind(A, B)
+C<-cbind("R.Square", "RMSE")
+rbind(C,D)
+```
+
+### Use Alternative Performance Function
+
+```{r}
+elnet_train_pred <- predict(cv_for_best_value, training)
+train_eval<-eval_results(training$Sun_Az, elnet_pred, training)
+elnet_test_pred <- predict(cv_for_best_value, testing)
+test_eval<-eval_results(testing$Sun_Az, elnet_pred, testing)
+A<-train_eval
+B<-test_eval
+Dataset<-rbind("Train","Test")
+D<-rbind(A,B)
+cbind(C,D)
+```
+
+
+
+

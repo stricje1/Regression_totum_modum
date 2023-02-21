@@ -1,0 +1,154 @@
+---
+title: "Robust Regression"
+author: "Jeffrey Strickland"
+date: "2022-11-29"
+output: word_document
+---
+
+```{r caret_opts, include = FALSE}
+knitr::opts_chunk$set(cache = TRUE, autodep = TRUE, fig.align = "center", warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## Robust Regression
+
+Standard types of regression, such as ordinary least squares (OLS) used for lm(), have favorable properties if their underlying assumptions are true, but can give misleading results otherwise (i.e., are not robust to assumption violations). Robust regression methods are designed to limit the effect that violations of assumptions by the underlying data-generating process have on regression estimates.
+For example, least squares estimates for regression models are highly sensitive to outliers: an outlier with twice the error magnitude of a typical observation contributes four (two squared) times as much to the squared error loss, and therefore has more leverage over the regression estimates. The Huber loss function is a robust alternative to standard square error loss that reduces outliers' contributions to the squared error loss, thereby limiting their impact on regression estimates.
+Given the atmospheric data, we’ll compare a linear model, lm(), to a robust model, rlm(), from the MASS package. 
+
+### Load packges
+
+```{r}
+library(readr)
+library(MASS)
+library(readr)
+library(dplyr)
+```
+
+# Load Data
+
+First, we load the data
+
+```{r}
+setwd("C:/Users/jeff/Documents/")
+data_df = read_csv("data/flight.csv")
+```
+
+# Normalize Data
+
+Next, we'll normalize the numeric data.
+
+```{r}
+data_df$X_pos = (data_df$X_pos-(mean(data_df$X_pos))/sd(data_df$X_pos))
+data_df$Altitude = (data_df$Altitude-(mean(data_df$Altitude))/sd(data_df$Altitude))
+data_df$kPascal = (data_df$kPascal-(mean(data_df$kPascal))/sd(data_df$kPascal))
+data_df$Temp_K = (data_df$Temp_K-(mean(data_df$Temp_K))/sd(data_df$Temp_K))
+data_df$Mol_Weight = (data_df$Mol_Weight-(mean(data_df$Mol_Weight))/sd(data_df$Mol_Weight))
+data_df$Density = (data_df$Density-(mean(data_df$Density))/sd(data_df$Density))
+```
+
+# Summarize the Data
+
+Now, let's look at some summary statistice for the data.
+
+```{r}
+summary(data_df)
+```
+
+# Partition the Data
+Next, we partition it into train and test sets.
+
+```{r}
+ind <- sample(2, nrow(data_df), replace = T, prob = c(0.5, 0.5))
+train <- data_df[ind==1,]
+test_cv <- data_df[ind==2,]
+```
+
+# Build the LM
+
+Here we build the linear model for atmosphere stratum using OLS.
+
+```{r}
+mod_1 = lm(Y ~ X_pos + Mol_Weight + Density, data = train)
+```
+
+# LM Metrics - SSE
+
+Next, we calculate sum of square errors for the train and cross-validation sets.
+
+```{r}
+mod_1_Train_SSE <- sum((predict(mod_1) - train$Y)^2)/2
+
+Test_mod_1_Output <- predict(mod_1, newdata = test_cv[1:6])
+mod_1_Test_SSE <- sum((Test_mod_1_Output - test_cv[8])^2)/2
+paste("mod_1 Train SSE: ", round(mod_1_Train_SSE, 4))
+paste("mod_1 Test SSE : ", round(mod_1_Test_SSE, 4))
+```
+
+## The Robust Model
+Here we build the robust model for atmosphere stratum using iterated re-weighted least squares (IWLS). We also use the Huber loss function. Huber's corresponds to a convex optimization problem and gives a unique solution (up to collinearity).
+ 
+
+```{r}
+mod_2 = rlm(Y ~ X_pos + Mol_Weight + Density, data = train, psi = psi.huber, method = "M")
+```
+
+## RLM Metrics - SSE
+
+Next, we calculate sum of square errors for the train and cross-validation sets.
+
+```{r}
+mod_2_Train_SSE <- sum((predict(mod_2) - train$Y)^2)/2
+
+Test_mod_2_Output <- predict(mod_2, newdata = test_cv[1:6])
+mod_2_Test_SSE <- sum((Test_mod_2_Output - test_cv[8])^2)/2
+paste("mod_2 Train SSE: ", round(mod_2_Train_SSE, 4))
+paste("mod_2 Test SSE : ", round(mod_2_Test_SSE, 4))
+```
+
+# Calculate Error Differences
+
+Next, we calculate the differences between the train and test SSEs.
+
+```{r}
+mod_1_Diff <- abs(mod_1_Train_SSE - mod_1_Test_SSE)
+mod_2_Diff <- abs(mod_2_Train_SSE - mod_2_Test_SSE)
+```
+
+# Bar plot of results
+
+Finally, we plot of results with a bar plot to compare the errors and their differences.
+
+```{r}
+Regression_GLM_Errors <- tibble(Network = 
+    rep(c("LM Model", "RLM Model"), each = 3), 
+    DataSet = rep(c("train",  "test_cv",  "diff"), time = 2), 
+    SSE = c(mod_1_Train_SSE, mod_1_Test_SSE, mod_1_Diff,
+    mod_2_Train_SSE, mod_2_Test_SSE, mod_2_Diff))
+
+library(ggplot2)
+
+p5<-Regression_GLM_Errors %>% 
+  ggplot(aes(Network, SSE, fill = DataSet)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Regression Model's SSE")
+p5
+```
+
+# Perform ANOVA 
+
+The plot shows that the RLM Model difference in error is slightly smaller than that for the LM Model. Since, we suspect unequal variance, we can test the hypothesis that the are equal, using ANOVA. So, we conjecture:
+
+$$H_0: x_1 = x_2 = x_3 = 0$$
+
+```{r}
+anova(mod_1)
+```
+
+# Print Model Summaries
+
+The output shows that we can reject the null hypothesis and conclude that the variances are statistically different. Also, the model summaries show that the residual standard error is smaller using the robust regression model. So, we choose the results for the robust regression over the linear model.
+
+```{r}
+summary(mod_2)
+```
+

@@ -1,0 +1,476 @@
+---
+title: "Orbital Parameters"
+author: "Jeffrey Strickland"
+date: '2022-09-06'
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+#The ECI coordinates can then be calculated. In this case, they will be in TEME frame, since the original orbital elements are derived from a TLE
+
+```{r}
+library(asteRisk)
+#try(coordinates_ECI <- KOEtoECI(a0, e0, i0, M0, omega0, OMEGA0))
+```
+
+
+#Let's calculate the ECI coordinates from the orbital elements provided by a TLE. It should be noted that this is often not recommended, since the orbital elements supplied in a TLE are not osculating orbital elements, but instead mean orbital elements set to fit a range of actual observations. The recommended procedures are to use TLE only in conjunction with the SGP4/SDP4 models, and viceversa.
+
+
+```{r}
+test_TLEs <-readTLE(paste0(path.package("asteRisk"),"//testTLE.txt"))
+#italsat2_TLE <- parseTLElines(lines=3)
+#italsat2_TLE
+```
+
+
+```{r}
+library(HH)
+```
+
+#The following orbital parameters correspond to an object with NORAD catalogue number 24208 (Italsat 2) the 26th of June, 2006 at 00:58:29.34 UTC
+
+# The period is lower than 225 min, and therefore the SGP4 model is valid.
+# Lets calculate the position and velocity of the satellite 40 minutes after
+# epoch
+
+
+```{r}
+set.seed(42)
+g = 6.67*10^(-11)
+gen_some_data = function(n_obs = 50) {
+  mu = 3.986004418e14 # gravitational parameter
+  int_designator = seq(0, 10, length.out = n_obs)
+  eccentricity = runif(n = n_obs, min = 0, max = 2.5)
+  focal_param = round(runif(n = n_obs, min = 100, max = 400),4)
+  semi_latus_rectum = focal_param*eccentricity  
+  semimajor_axis = semi_latus_rectum/abs((1-eccentricity^2))
+  classification = sample(c("U", "C", "S"), size = n_obs, replace = TRUE)
+  periapsis  = round(runif(n = n_obs, min = 0, max = 360), 4)
+  inclination = round(runif(n = n_obs, min = 0, max = 180), 4)
+  mean_motion = 360/focal_param
+  mean_anomoly <- 2*pi/runif(n = n_obs, min = 0, max = 24) 
+  pos_y <- round(runif(n = n_obs, min = -1000, max = 1000),4)
+  pos_z <- round(runif(n = n_obs, min = -1000, max = 1000),4)
+  omega0 <- atan2(pos_y,pos_z) 
+  OMEGA0 <- 80.0121*pi/round(runif(n = n_obs, min = 180, max = 360), 4)  
+  nu = round(runif(n = n_obs, min = 0, max = 360), 4)
+  longitudePerigee <- OMEGA0 + omega0
+  trueLongitude <- longitudePerigee + nu
+  #mean_anomoly = round(runif(n = n_obs, min = 0, max = 360),4)
+  day = round(runif(n = n_obs, min = 0, max = 24), 4)
+  Bstar <- 0.66816e-4 # drag coefficient
+  data.frame(mean_motion, semimajor_axis, semi_latus_rectum, eccentricity, periapsis, mean_anomoly, inclination, omega0, OMEGA0, trueLongitude, longitudePerigee)
+}
+```
+
+
+```{r}
+set.seed(42)
+orb_data = gen_some_data(n_obs = 2500)
+orb_idx  = sample(1:nrow(orb_data), 500)
+orb_trn  = orb_data[orb_idx, ]
+orb_val  = orb_data[-orb_idx, ]
+summary(orb_trn)
+nrow(orb_trn)
+nrow(orb_val)
+```
+
+
+# Calculation of the orbital period
+#2*pi/n0
+
+```{r}
+set.seed
+orb_data = gen_some_data(n_obs = 5000)
+orb_tst = gen_some_data(n_obs = 800)
+orb_trn = gen_some_data(n_obs = 400)
+summary(orb_trn)
+```
+
+## Test
+
+```{r}
+orb_trn <- as.data.frame(orb_trn)
+head(orb_trn, 10)
+```
+
+
+# The period is lower than 225 min, and therefore the SGP4 model is valid.
+# Lets calculate the position and velocity of the satellite 40 minutes after
+# epoch
+
+
+```{r}
+new_lines <- cbind(n0=orb_trn$n0, e0=orb_trn$e0, i0=orb_trn$i0, M0=110.5714*pi/180, omega0=orb_trn$omega0, OMEGA0=orb_trn$OMEGA0, Bstar=orb_trn$Bstar)
+
+```
+
+## SGP4 Propogator
+
+```{r}
+new_state1 <- sgp4(n0=(orb_trn[1,1]), e0=0.0086731, i0=orb_trn[1,3], M0=orb_trn[1,4],omega0=orb_trn[1,5],OMEGA0=orb_trn[1,6],Bstar=orb_trn[1,7], targetTime = 40)
+new_state1
+```
+
+## Experiment 1
+
+```{r}
+#new_state[1:i]
+new_state0 <- sgp4(n0=100, e0=0.0086731, i0=200, M0=300,omega0=400,OMEGA0=500,Bstar=600, targetTime = 20)
+print(new_state0)
+```
+
+## Experiment 2
+
+```{r}
+XX<-sgp4(n0=100, e0=0.0086731, i0=200, M0=300,omega0=400,OMEGA0=500,Bstar=600, targetTime = 20)
+print(XX)
+```
+
+## Test
+
+```{r}
+for (val in 1: 28){ 
+new_lines[val] <- sgp4(n0=((2*pi)/(1440)), 
+                  e0=test_TLEs[[val]]$eccentricity, 
+                  i0=test_TLEs[[val]]$inclination, 
+                  M0=test_TLEs[[val]]$meanAnomaly, 
+                  omega0=test_TLEs[[val]]$perigeeArgument, 
+                  OMEGA0=test_TLEs[[val]]$ascension,                 #trueLongitude=test+TLEs[[val]]$trueLongitude,                  #longitudePerigee=test+TLEs[[val]]$longitudePerigee,
+                  Bstar=test_TLEs[[val]]$Bstar,targetTime = 20)
+}
+```
+
+
+```{r}
+# The following orbital parameters correspond to an object with NORAD catalogue.
+# number 88888 the 1st of October, 1980 at 23:41:24 UTC.
+g = 6.67*10^(-11)
+
+gen_orb_data = function(n_obs = 100) {
+  pos_y <- round(runif(n = n_obs, min = -1000, max = 1000),4)
+  pos_z <- round(runif(n = n_obs, min = -1000, max = 1000),4)
+  int_designator = seq(0, 10, length.out = n_obs)
+  focal_param = round(runif(n = n_obs, min = 100, 
+max = 400),4)
+  classification = sample(c("U", "C", "S"), size = n_obs, 
+replace = TRUE)
+  eccentricity = runif(n = n_obs, min = 0, max = 90)
+  periapsis  = round(runif(n = n_obs, min = 0, max = 90), 4)
+  inclination = round(runif(n = n_obs, min = 0, max = 180), 4)
+  semi_latus_rectum = focal_param*eccentricity
+  semimajor_axis = semi_latus_rectum/abs((1-eccentricity^2))
+  mean_motion = 360/focal_param
+  mean_anomoly <- 2*pi/runif(n = n_obs, min = 0, max = 24) 
+  omega0 <- atan2(pos_y, pos_z) 
+  Bstar <- 0.66816e-4 # drag coefficient.
+
+  data.frame(mean_motion, semimajor_axis, semi_latus_rectum, 
+eccentricity, periapsis, mean_anomoly, inclination, 
+focal_param, periapsis, omega0)
+}
+```
+
+
+```{r}
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+```
+
+
+
+```{r}
+num_sims = 300
+num_degrees = 10
+val_rmse = matrix(0, ncol = num_degrees, nrow = num_sims)
+```
+
+
+
+```{r}
+set.seed(42)
+for (i in 1:num_sims) {
+  # simulate data.
+  orb_data = gen_orb_data(n_obs = 300)
+  # set aside validation set.
+  orb_idx = sample(1:nrow(orb_data), 160)
+  orb_trn = orb_data[orb_idx, ]
+  orb_val = orb_data[-orb_idx, ]
+  # fit models and store RMSEs.
+  for (j in 1:num_degrees) {
+    #fit model.
+    fit = glm(mean_motion ~ poly(semi_latus_rectum, degree = j), data = orb_trn)
+    # calculate error.
+    val_rmse[i, j] = calc_rmse(actual = orb_val$mean_motion, predicted = predict(fit, orb_val))
+  }
+}
+
+```
+
+## Loop in Development
+
+```{r}
+set.seed(42)
+orb_data = gen_orb_data(n_obs = 1000)
+orb_idx  = sample(1:nrow(orb_data), 500)
+orb_trn  = orb_data[orb_idx, ]
+orb_val  = orb_data[-orb_idx, ]
+summary(orb_trn)
+
+```
+Plot the mean motion vs semilatus rectum
+
+```{r, echo = TRUE, fig.height = 4, fig.width = 8}
+plot(mean_motion ~ semi_latus_rectum, data = orb_trn, 
+col = "dodgerblue", pch = 20)
+grid()
+curve(x ^ 3, add = TRUE, col = "black", lwd = 2)
+
+```
+
+Fit mean motion using a 10 degree polynomial of the semilatus rectum.
+
+```{r}
+fit = lm(mean_motion ~ poly(semi_latus_rectum, 10), 
+data = orb_trn)
+summary(fit)
+```
+
+Now, we calculate the RMSE for the training and validation sets.
+
+```{r}
+calc_rmse(actual = orb_trn$mean_motion, predicted = predict(fit, orb_trn))
+calc_rmse(actual = orb_val$mean_motion, predicted = predict(fit, orb_val))
+
+```
+
+Set up parameters for simulating a fit of mean motion iterating though 1-10 degree polynomial of the semilatus rectum.
+
+```{r}
+num_sims = 300
+num_degrees = 10
+val_rmse = matrix(0, ncol = num_degrees, nrow = num_sims)
+```
+
+Run the simulation and calculate the RMSE.
+
+```{r}
+set.seed(42)
+for (i in 1:num_sims) {
+  # simulate data.
+  orb_data = gen_orb_data(n_obs = 300)
+  # set aside validation set.
+  orb_idx = sample(1:nrow(orb_data), 160)
+  orb_trn = orb_data[orb_idx, ]
+  orb_val = orb_data[-orb_idx, ]
+  # fit models and store RMSEs.
+  for (j in 1:num_degrees) {
+    #fit model.
+    fit = glm(mean_motion ~ poly(semi_latus_rectum, degree = j), data = orb_trn)
+    # calculate error.
+    val_rmse[i, j] = calc_rmse(actual = orb_val$mean_motion, predicted = predict(fit, orb_val))
+  }
+}
+summary(fit)
+```
+
+Next, we plot the RMSE vs Degree of polynomial from the simulation and the model chosen vs degree of polynomial.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+par(mfrow = c(1, 2))
+matplot(t(val_rmse)[, 1:10], pch = 20, type = "b", ylim = c(0.50, 0.75), xlab = "Polynomial Degree", ylab = "RMSE", main = "RMSE vs Degree")
+barcol = c("grey", "grey", "dodgerblue", "grey", "grey", "grey", "grey", "grey", "grey", "grey")
+barplot(table(factor(apply(val_rmse, 1, which.min), levels = 1:10)),
+        ylab = "Times Chosen", xlab = "Polynomial Degree", col = barcol, main = "Model Chosen vs Degree")
+```
+
+Run the simulation using a 5-fold cross-validation set.
+
+```{r}
+cv_rmse = matrix(0, ncol = num_degrees, nrow = num_sims)
+set.seed(42)
+for (i in 1:num_sims) {
+  # simulate data, use all data for training.
+  orb_trn = gen_orb_data(n_obs = 200)
+  # fit models and store RMSE.
+  for (j in 1:num_degrees) {
+    #fit model.
+    fit = glm(mean_motion ~ poly(semi_latus_rectum, 
+degree = j), data = orb_trn)
+    # calculate error.
+    cv_rmse[i, j] = sqrt(boot::cv.glm(orb_trn, fit, 
+K = 5)$delta[1])
+    
+  }
+}
+
+```
+
+Create a table of RMSE and 5-Fold CV RMSE with SDs.
+
+```{r, echo = TRUE}
+results = data.frame(
+  degree = 1:10,
+  colMeans(val_rmse),
+  apply(val_rmse, 2, sd),
+  colMeans(cv_rmse),
+  apply(cv_rmse, 2, sd)
+)
+colnames(results) = c(
+  "Polynomial Degree",
+  "Mean, Val",
+  "SD, Val",
+  "Mean, CV",
+  "SD, CV"
+)
+
+knitr::kable(results, digits = 3)
+```
+
+Summarize the fit.
+
+```{r}
+summary(fit)
+```
+
+Create a dataframe of the 5-Fold CV RMSEs by polynomial degrees.
+
+```{r}
+df<-as.data.frame(cbind(cbind(cv_rmse[1,1:10]), cbind(cv_rmse[2,1:10]), cbind(cv_rmse[3,1:10]), cbind(cv_rmse[4,1:10]), cbind(cv_rmse[5,1:10]), cbind(cv_rmse[6,1:10]), cbind(cv_rmse[7,1:10]), cbind(cv_rmse[8,1:10]), cbind(cv_rmse[9,1:10]), cbind(cv_rmse[10,1:10])))
+df
+```
+
+Plot the dataframe.
+
+```{r, echo = TRUE, fig.height = 6, fig.width = 10}
+plot(df)
+```
+
+Rename the columns of the dataframe.
+
+```{r}
+colnames(df) <-c("Poly1", "Poly2", "Poly3", "Poly4", "Poly5", "Poly6", "Poly", "Poly8", "Poly9", "Poly10")
+```
+
+Create a datframe the same dataframe with and index.
+
+```{r}
+dfx<-as.data.frame(cbind(cbind(seq(1,10,1)),cbind(cv_rmse[1,1:10]), cbind(cv_rmse[2,1:10]), cbind(cv_rmse[3,1:10]), cbind(cv_rmse[4,1:10]), cbind(cv_rmse[5,1:10]), cbind(cv_rmse[6,1:10]), cbind(cv_rmse[7,1:10]), cbind(cv_rmse[8,1:10]), cbind(cv_rmse[9,1:10]), cbind(cv_rmse[10,1:10])))
+dfx
+```
+
+Create a barplot of the mean RMSEs for the best five polynomial degrees.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+barplot(cbind(mean(dfx$V2),mean(dfx$V3),mean(dfx$V4),mean(dfx$V5),mean(dfx$V6),mean(dfx$V7),mean(dfx$V8),mean(dfx$V9),mean(dfx$V10)), col = "blue")
+```
+
+Build a connected dotplot of the top five 5-fold polynomials.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+library(dplyr)
+library(ggplot2)
+df <- as.data.frame(cbind(cbind(cv_rmse[1,1:10]), cbind(cv_rmse[2,1:10]), cbind(cv_rmse[3,1:10]), cbind(cv_rmse[4,1:10]), cbind(cv_rmse[5,1:10]), cbind(cv_rmse[6,1:10]), cbind(cv_rmse[7,1:10]), cbind(cv_rmse[8,1:10]), cbind(cv_rmse[9,1:10]), cbind(cv_rmse[10,1:10])))
+
+colnames(df) <- c("Poly1", "Poly2", "Poly3", "Poly4", "Poly5", "Poly6", "Poly7", "Poly8", "Poly9", "Poly10")
+ 
+df1 <- as.data.frame(df$Poly1)
+df2 <- as.data.frame(df$Poly2)
+df5 <- as.data.frame(df$Poly5)
+df6 <- as.data.frame(df$Poly6)
+df9 <- as.data.frame(df$Poly9)
+
+g <- ggplot() +
+  geom_point(aes(data=df1, y = df$Poly1, x = seq(1,10,1), 
+color = "Poly1"), size = 3) +
+  geom_point(aes(data=df2, y = df$Poly2, x = seq(1,10,1), 
+color = "Poly2"), size = 3) +
+  geom_point(aes(data=df5, y = df$Poly5, x = seq(1,10,1), 
+color = "Poly5"), size = 3) +
+  geom_point(aes(data=df6, y = df$Poly6, x = seq(1,10,1), 
+color = "Poly6"), size = 3) +
+  geom_point(aes(data=df9, y = df$Poly9, x = seq(1,10,1), 
+color = "Poly9"), size = 3) +
+  geom_line(aes(data= df1, y = df$Poly1, x = seq(1,10,1), 
+color = "Poly1"), size = 1.5) +
+  geom_line(aes(data= df2, y = df$Poly2, x = seq(1,10,1),
+color = "Poly2"), size = 1.5) +
+  geom_line(aes(data= df5, y = df$Poly5, x = seq(1,10,1),
+color = "Poly5"), size = 1.5) +
+  geom_line(aes(data= df6, y = df$Poly6, x = seq(1,10,1),
+color = "Poly6"), size = 1.5) +
+  geom_line(aes(data= df9, y = df$Poly9, x = seq(1,10,1),
+color = "Poly9"), size = 1.5) +
+  labs(x = "Simulation Number") +
+  labs(y = "CV RMSE by Poly") + 
+  theme_classic()
+g
+```
+
+Generate a new dataframe for plotting with a stacked barplot.
+
+```{r}
+dfz<-as.data.frame(cbind(cbind(cv_rmse[1,1:10]), cbind(cv_rmse[2,1:10]), cbind(cv_rmse[3,1:10]), cbind(cv_rmse[4,1:10]), cbind(cv_rmse[5,1:10]), cbind(cv_rmse[6,1:10]), cbind(cv_rmse[7,1:10]), cbind(cv_rmse[8,1:10]), cbind(cv_rmse[9,1:10]), cbind(cv_rmse[10,1:10])))
+dfz
+colnames(dfz) <-c("Poly1", "Poly2", "Poly3", "Poly4", "Poly5", "Poly6", "Poly7", "Poly8", "Poly9", "Poly10")
+```
+
+Creat the stacked barplot.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+mp <- barplot(as.matrix(dfz),col="blue") # default
+tot <- colSums(dfz)
+title(main = "5-Fold Cross Validation", font.main = 4)
+```
+
+Create an unstacked barplot with RMSE values by deggree of the polynomials.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+tot <- colMeans(dfz)
+barplot(as.matrix(dfz), beside = TRUE, ylim = c(0, 5),col = c("lightblue", "mistyrose", "lightcyan", "lavender", "cornsilk", "dodgerblue", "violet", "red2", "orange", "green"))
+title(main = "5-Fold Cross Validation", font.main = 4)
+```
+
+The function `which.min` determines the location, i.e., index of the (first) minimum of a numeric vector. levels provides access to the levels attribute of a variable. In `max_correct`, the argument `table(apply(val_rmse, 1, which.min))` in `max_correct` generates a table of bar heights and the maximum value in the table is 31, wile the maximum value of `table(apply(cv_rmse, 1, which.min))` is 36. These constitute the y-axes.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+par(mfrow = c(1, 2))
+max_correct = max(max(table(apply(val_rmse, 1, which.min))), max(table(apply(cv_rmse, 1, which.min))))
+barcol = c("grey", "grey", "dodgerblue", "grey", "grey", "grey", "grey", "grey", "grey", "grey")
+barplot(table(factor(apply(val_rmse, 1, which.min), levels = 1:10)), ylim = c(0, max_correct), 
+        ylab = "Times Chosen", xlab = "Polynomial Degree", col = barcol, main = "Single Validation Set")
+barplot(table(factor(apply(cv_rmse,  1, which.min), levels = 1:10)), ylim = c(0, max_correct), 
+        ylab = "Times Chosen", xlab = "Polynomial Degree", col = barcol, main = "5-Fold Cross-Validation")
+```
+
+Single validation set vs 5-Fold cross-validation.
+
+```{r, echo = TRUE, fig.height = 5, fig.width = 8}
+par(mfrow = c(1, 2))
+matplot(t(val_rmse)[, 1:10], pch = 20, type = "b", ylim = c(0.50, 0.80), xlab = "Polynomial Degree", ylab = "RMSE", main = "Single Validation Set")
+matplot(t(cv_rmse)[, 1:10],  pch = 20, type = "b", ylim = c(0.50, 0.80), xlab = "Polynomial Degree", ylab = "RMSE", main = "5-Fold Cross-Validation")
+```
+
+Backup table
+
+```{r, echo = FALSE}
+print(paste("Poly Degrees  |Mean, Val| SD, Val |Mean, CV | SD, CV"))
+print(paste("-----------------------------------------------------"))
+print(paste(" 1            |",round(mean(val_rmse[,1]),5),"|",round(sd(val_rmse[,1]),5)," |",round(mean(cv_rmse[,1]),5),"|",round(sd(cv_rmse[,1]),5)))
+print(paste(" 2            |",round(mean(val_rmse[,2]),5),"|",round(sd(val_rmse[,2]),5),"|",round(mean(cv_rmse[,2]),5),"|",round(sd(cv_rmse[,2]),5)))
+print(paste(" 3            |",round(mean(val_rmse[,3]),5),"|",round(sd(val_rmse[,3]),5),"|",round(mean(cv_rmse[,3]),5),"|",round(sd(cv_rmse[,3]),5)))
+print(paste(" 4            |",round(mean(val_rmse[,4]),5),"|",round(sd(val_rmse[,4]),5),"|",round(mean(cv_rmse[,4]),5),"|",round(sd(cv_rmse[,4]),5)))
+print(paste(" 5            |",round(mean(val_rmse[,5]),5),"|",round(sd(val_rmse[,5]),5),"| ",round(mean(cv_rmse[,5]),5),"|",round(sd(cv_rmse[,5]),5)))
+print(paste(" 6            |",round(mean(val_rmse[,6]),5),"|",round(sd(val_rmse[,6]),5),"|",round(mean(cv_rmse[,6]),5),"|",round(sd(cv_rmse[,6]),5)))
+print(paste(" 7            |",round(mean(val_rmse[,7]),5),"|",round(sd(val_rmse[,7]),5),"|",round(mean(cv_rmse[,7]),5),"|",round(sd(cv_rmse[,7]),5)))
+print(paste(" 8            |",round(mean(val_rmse[,8]),5),"|",round(sd(val_rmse[,8]),5),"| ",round(mean(cv_rmse[,8]),5),"|",round(sd(cv_rmse[,8]),5)))
+print(paste(" 9            |",round(mean(val_rmse[,9]),5),"|",round(sd(val_rmse[,9]),5),"|",round(mean(cv_rmse[,9]),5),"|",round(sd(cv_rmse[,9]),5)))
+print(paste("10            |",round(mean(val_rmse[,10]),5),"|",round(sd(val_rmse[,10]),5),"| ",round(mean(cv_rmse[,10]),5),"|",round(sd(cv_rmse[,10]),5)))
+
+```
+

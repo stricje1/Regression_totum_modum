@@ -1,0 +1,343 @@
+---
+title: "CME Events"
+author: "Jeffrey Strickland"
+date: '2022-08-19'
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 250)
+```
+
+# Impacts of CMEs on Satelllites, Based on Logistic Regression
+
+## Introduction
+### Coronal mass ejections (CMEs)
+CMEs are eruptive solar events. They are often associated with solar flares and filaments. CMEs can cause space weather events such as geomagnetic storms, high energy electron storms, hot plasma injection, ionospheric storms, and increased density in the upper atmosphere [1]. Large CME events can impact communications, navigation systems, aviation activities, and even power grids [2]. To avoid potential damage and asset loss, there is a need to accurately predict the arrival of the CMEs that may sweep across earth-orbitting satellites, as well as Earth itself. Over the last decades, much literature has tried to reveal the eruption and evolution of the CMEs [3]. Until recently, the concept of CME geoeffectiveness becomes popular as a natural application extension of those theoretical researches alongside the boom of the number of geospace satellites. Therefore, we need to predict: (1) Will the CME “hit” or “miss” a satellite? (2) If the prediction is “hit,” then the next question is what is the expected arrival time of the CME? We will only address the first question here.
+
+### Current MOdels
+ Currently, models with the subject on CMEs roughly fit into three categories: empirical models [4], physics-based models, and black-box models, with the last classification mainly comprised of machine learning models. Benefiting from the advancement of the machine learning theory and algorithm in recent years, machine learning models [5] can achieve results that are comparable to physics-based models, either the analytical drag-based models [6] or the numerical magnetohydrodynamic (MHD) models [7].
+
+Before the arrival time prediction, forecasters need to assess whether or not the CME seen in the coronagraph images can reach earth-orbiting satellite. To improve the accuracy of prediction, there is much of work that has to be accomplished [8]. Even with the aid of sophisticated models, identifying a geoeffective CME is still a challenge. Nevertheless, a combination of machine learning methods and experienced forecasters may assist us in reaching a more accurate solution to CME’s geoeffectiveness.
+
+Predicting whether or not a CME will reach earth-orbitting satellites is a dichotomous problem, requiring only a “yes” or “no” response. Machine learning logistic regression is often used to deal with this kind of classification problem. Besliu-Ionescu et al. [9] have used a modified version of the logistic regression method proposed by Srivastava [10] to predict the geoeffectiveness of CMEs. Besliu-Ionescu and Mierla [11] presented an update of a logistic regression model to predict whether a CME will reach the earth-orbitting satellites and be associated with geomagnetic storms. In fact, forecasters need to count on similar historical solar activity events to assess events in progress. Therefore, logistic regression can provide forecasters an option to improve the prediction results. Although not discussed here, Shi et al. [12] have applied the algorithm to anticipate CMEs’ arrival time.
+
+## Data
+### Data Preparation
+In this example, a total of 20,321 CME events are collected from the SOHO/LASCO CME catalog [13], from 2000 to 2014. This CME catalog is generated and maintained by the CDAW Data Center by NASA and The Catholic University of America in cooperation with the Naval Research Laboratory. Furthermore, 227 near-Earth interplanetary coronal mass ejections (ICME) events are taken into account between 1996 and 2020, via the near-Earth ICME list [14] to collect positive samples for our example (we only use 20 of them). We confirmed a CME that hit the earth from both the SOHO/LASCO CME catalog and the associated near-Earth ICME catalog as a positive sample and the rest in the catalogs are negative, resulting in a sample set of 3058 positive samples and 17,263 negative samples, which is unbalanced.
+
+In order to balance the sample distribution, many cases are removed from our data set: (1) Generally, the angular width (AW) of most CME events with possible geoeffectiveness is greater than 90 degrees. Therefore, CME events with angular width less than 90 degrees are deleted.(2) CME events (too faint or without sufficient observations) with missing characteristic parameters are also deleted.
+
+The remaining 8895-CME-event data set, is comprised of 3058 positive samples and 5837 negative samples. From the SOHO/LASCO CME catalog, 10 characteristic parameters are gathered for further analysis. These parameters are angular width, central position angle (CPA), measurement position angle (MPA), linear velocity (Vlinear), initial velocity (Vinitial), final velocity (Vfinal), the velocity at 20 solar radii (V20Rs), mass, acceleration (Accel), and kinetic energy (KE). The details of their calculations are given in the SOHO/LASCO CME catalog. We have analyzed and used the parameters above as the input to the logistic regression and random forest regression algorithms, aiming at developing a model to help forecasters assess the geoeffectiveness of CMEs.
+
+### Deviation Standardization
+
+Eight physical quantities, angular width, linear velocity, initial velocity, final velocity, V20Rs, kinetic energy, mass, and acceleration, are all continuous and normalized by the deviation standardization given by:
+
+$X' = \frac{X - X_{min}}{X_{max} - X_{min}}$
+
+where $X$ is the original data. $X_{max}$ and $X_{min}$ represent the maximum and the minimum for each CME parameter. $X'$ gives the normalized value.
+
+### Retrieval
+We retrieved data from the "Index of /CME_list/UNIVERSAL/text_ver" at https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/, from January 1, 2000, to December 31, 2014. We show a partial list here, but we extracted all text files and appended each in a CSV file, which when normalized is titled "cme_norm.csv."
+
+text01 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_01.txt'
+text02 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_02.txt'
+text03 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_03.txt'
+text04 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_04.txt'
+text05 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_05.txt'
+text06 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_06.txt'
+text07 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_07.txt'
+text08 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_08.txt'
+text09 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_09.txt'
+text10 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_10.txt'
+text11 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_11.txt'
+text12 <- 'https://cdaw.gsfc.nasa.gov/CME_list/UNIVERSAL/text_ver/univ2000_12.txt'
+
+options(scipen = 100, digits = 4)
+
+## Data Pre-processing
+### Load the Data
+We employ the readr library to read rectangular data (like 'csv', 'tsv', and 'fwf'). It is designed to flexibly parse many types of data found in the "wild", while providing an informative problem report when parsing leads to unexpected results.
+
+```{r}
+library(readr)
+file <- 'C:\\Users\\jeff\\Documents\\Data\\cme_norm.csv'
+data01 <- read_csv(file)
+```
+
+### Next, we drop the date and time variables.
+Since we are not immediately concerned with the CME event time prediction, we define a subset od the data that excludes date-time. We accomplish this explicitly at first, but also show how to use a name-vector, "drop", to do the same operation.
+
+```{r}
+data01 <- data01[c(2,3,4,5,6,7,8,9,10)]
+drop <- c("date", "time")
+data01 = data01[,!(names(data01) %in% drop)]
+print(data01)
+```
+
+### Change all to Numeric Data Type
+For both the logistic regression and the random forest regression, we need to format the data as numeric, except the response, which is dichotomous.
+
+```{r}
+data01$AW<-as.numeric(data01$AW)
+data01$V_linear<-as.numeric(data01$V_linear)
+data01$V_init<-as.numeric(data01$V_init)
+data01$V_final<-as.numeric(data01$V_final)
+data01$V_20R<-as.numeric(data01$V_20R)
+data01$Accel<-as.numeric(data01$Accel)
+data01$Mass<-as.numeric(data01$Mass)
+data01$KE<-as.numeric(data01$KE)
+```
+
+### Impute Missing Values
+Moreover, our data needs to be absent from empty values and NAs, which were coerced to fill empty values when we compiled the data. Since the data is now numeric, we'll use mean values as replacements.
+
+```{r}
+data01$AW[is.na(data01$AW)] <- mean(data01$AW, na.rm = TRUE)
+data01$V_linear[is.na(data01$V_linear)] <- mean(data01$V_linear, na.rm = TRUE)
+data01$V_init[is.na(data01$V_init)] <- mean(data01$V_init, na.rm = TRUE)
+data01$V_final[is.na(data01$V_final)] <- mean(data01$V_final, na.rm = TRUE)
+data01$V_20R[is.na(data01$V_20R)] <- mean(data01$V_20R, na.rm = TRUE)
+data01$Accel[is.na(data01$Accel)] <- mean(data01$Accel, na.rm = TRUE)
+data01$Mass[is.na(data01$Mass)] <- mean(data01$Mass, na.rm = TRUE)
+data01$KE[is.na(data01$KE)] <- mean(data01$KE, na.rm = TRUE)
+```
+
+### Check the Data
+Now let's perform a quick-check to ensure that our pre-processing is yielding expected results. The `dplyr` package is a grammar of data manipulation, providing a consistent set of verbs that help you solve the most common data manipulation challenges. It provides the piping operstor, `%>%`, for counting response values, "No" and "Yes", or(0,1) in this instance. The base R summary function is used to summarize the statistics of the dataset.
+
+```{r}
+
+library(dplyr)
+summary(data01)
+data01 %>% count(CME)
+```
+
+### Split the Data
+The `plyr` package is a set of clean and consistent tools that implement the split-apply-combine pattern in R, which we use here. The `caret` package (short for Classification And REgression Training) contains functions to streamline the model training process for complex regression and classification problems. We use its functionality for splitting the dat into train and test (cross-validation) subsets. In this instance, we sample the dta without replacement.
+
+```{r}
+library(plyr)
+library(caret)
+training.samples <- data01$CME %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train.data  <- data01[training.samples, ]
+test.data <- data01[-training.samples, ]
+```
+
+## First Logistic Regression Model
+We use the Generalized Linear Model type to implement logistic regression and the `logit` link function. the "family" parameter provides aa description of the error distribution, `binomial` in our case, and link function to be used in the model.
+
+```{r}
+log_fit1 <- glm(CME ~ ., family = binomial(link = "logit"), data = train.data, method = glm.fit, model = TRUE)
+```
+
+### Variable Importance
+Here, we use a generic method for calculating variable importance for objects produced by the train method.
+
+```{r}
+varImp(log_fit1)
+```
+
+### Model Summary
+NOow, we summarize the results from fitting the data with our first logistic regression model.
+
+```{r}
+summary(log_fit1)
+```
+
+### Model Coefficients
+Although the same information is contained in the summary, we show the model coefficient vales here.
+
+```{r}
+log_fit1$coefficients
+```
+Our logistic regressiov equation is:
+
+$Y=30.1203+17.5223AW+1.8700V_{linear}+88.3078 V_{init}+81.7161 V_{final}+5.9289 V_{20R}-38.1184 Accel-143.7906  Mass+128.5977KE$
+
+### Model Predictions
+We use the `predict` function here as cross validation for our first model and store them in `pred1`. We'll use this result next.
+
+```{r}
+pred1 <- predict(log_fit1,test.data)
+```
+
+### Model Performance
+Now, we use our prediction object (pred1) to measure the model's performance in terms of Root MEan Square Error (RMSE) and $R^2$.
+
+```{r}
+modelPerfomance = data.frame(RMSE = RMSE(pred1, test.data$CME), R2 = R2(pred1, test.data$CME))
+print(modelPerfomance)
+```
+
+## Refined Logistic Regression Model
+### Drop Unnecessary Variables
+Our model results from log_fit1, above, shows us that AD, aC_20R, and Accel are not significanyt in explaining the model variation, so we can drop them going forward.
+
+```{r}
+drop2 <- c("AW", "V_20R", "Accel")
+data02 = data01[,!(names(data01) %in% drop2)]
+names(data02)
+print(data02)
+```
+
+### Split the Data
+Next, we take the remaining variables in a new subset and split it into train and cross-validation (test) subsets. Also, we set a random seed so that our results are reproducible.
+
+```{r}
+set.seed(1234)
+training.samples <- data02$CME %>%
+  createDataPartition(p = 0.8, list = FALSE)
+train2.data  <- data02[training.samples, ]
+test2.data <- data02[-training.samples, ]
+```
+
+### Define the Refined Model
+Next, we define a new logistic regressionmodel with our significant variables: `"V_linear"`, `"V_init"`, `"V_final"`, `"Mass"`, `"KE"`, and `"CME"`.
+
+```{r}
+log_fit2 <- glm(CME ~ ., family = binomial(link = "logit"), data = train2.data, method = glm.fit, model = TRUE)
+summary(log_fit2)
+log_fit2$coefficients
+```
+
+$Y=28.88+2.48AWV_{linear}+87.60 V_{init}+86.02 V_{final}-139.25Mass+127.47KE$
+
+### Calculate New Predictions
+We also calculate predictions from our refined model and put them into an object, `pred2`.
+
+```{r}
+pred2 <- predict(log_fit2,test2.data)
+```
+
+### Evaluate Refined Model Performance
+For our refined model, we'll use multiple measures for evaluating performance. We start by calculating RMSE and $R^2$ as we did before.
+
+```{r}
+modelPerfomance = data.frame(RMSE = RMSE(pred2, test2.data$CME), R2 = R2(pred2, test2.data$CME))
+print(modelPerfomance)
+```
+
+### Calculate the Confusion Matrix
+Next, we generate a confussion matrix that shows True-Positives, False-Positive, True-Negatives, and False-Negatives. These are shown as counts.
+
+True-Negative | False-Negative
+--------------|---------------|
+False-Positive| True-Positive
+
+
+```{r}
+library(ModelMetrics)
+ModelMetrics::confusionMatrix(test2.data$CME, pred2, cutoff = 0.5)
+```
+
+### Pseudo-R2 Measures
+
+Numerous pseudo r-squared measures have been proposed for generalized linear models, involving a comparison of the log-likelihood for the fitted model against the log-likelihood of a null/restricted model with no predictor, normalized to run from zero to one as the fitted model provides a better fit to the data (providing a rough analogue to the computation of r-squared in a linear regression).
+
+#### Value: A vector of length 6 containing
+
+* llh       = The log-likelihood from the fitted model
+* llhNull	  = The log-likelihood from the intercept-only restricted model
+* G2	      = Minus two times the difference in the log-likelihoods
+* McFadden	= McFadden's pseudo r-squared
+* r2ML	    = Maximum likelihood pseudo r-squared
+* r2CU	    = Cragg and Uhler's pseudo r-squared
+
+  Function  | Definition
+------------| -----------------------------------------------------------
+  llh       | The log-likelihood from the fitted model
+  llhNull	  | The log-likelihood from the intercept-only restricted model
+  G2	      | Minus two times the difference in the log-likelihoods
+  McFadden	| McFadden's pseudo r-squared
+  r2ML	    | Maximum likelihood pseudo r-squared
+  r2CU	    | Cragg and Uhler's pseudo r-squared
+
+
+```{r}
+library(pscl)
+pR2(log_fit2)
+```
+
+Pseudo $R^2$-like performance measures:
+
+  Function   |   Definition
+-------------| ------------------------
+  llh        |  - 426.5689015
+  llhNull	   |  -4592.4486862
+  G2	       |   8331.7595695
+  McFadden	 |      0.9071152
+  r2ML	     |      0.6898964
+  r2CU	     |      0.9516698
+
+McFadden (15) outlines perhaps the most straightforward of such pseudo R2 indices, in the sense of reflecting both the criterion being minimized in logistic regression estimation and the variance-accounted for by the logistic regression model. This log likelihood ratio R2 (sometimes referred to as “deviance R2”) is one minus the ratio of the full-model log-likelihood (LL) to the intercept-only log-likelihood,
+
+$R^2_{MF}=1-\frac{LL(Ful)}{LL(Null}$
+
+This index can also be adjusted to penalize for the number of predictors (k) in the model [16],
+
+$R^2_{MFA}=1-\frac{LL(Ful)-k}{LL(Null}$
+
+Hence, we’ll consider McFadden’s pseudo R2 as an adequate explanation for our predictors performance in explaining positive CMEs, which is 90.7%.
+
+### Create a ROC Plot
+Finally, we construct a Receiver Operating Characteristic (ROC) curve. It is used to assess the accuracy of a continuous measurement for predicting a binary outcome. The farther the curve is from the diagonal, the stronger the predictor. So, Initial Velocity, Final Velocity, and Kinetic Energy are very strong predictors, while Linear Velocity and Mass are weaker predictors, even though they are significant. Thus, we can use this model to predict CME events that will affect earth-orbiting satellites.
+
+```{r, fig.width=8, fig.height=4.5}
+library(pROC)
+
+f1 = roc(CME ~ V_linear, test2.data) 
+f2 = roc(CME ~ V_init, test2.data) 
+f3 = roc(CME ~ V_final, test2.data)
+f4 = roc(CME ~ Mass, test2.data)
+f5 = roc(CME ~ KE, test2.data)
+
+par(mar=c(4, 6, 2, 2), c(font.lab=3, cex=2.5, cex.lab=2, col.lab=4))
+plot(f1, col="red")
+par(new=TRUE)
+plot(f2, col="green")
+par(new=TRUE)
+plot(f3, col="blue")
+par(new=TRUE)
+plot(f4, col="orange")
+par(new=TRUE)
+plot(f5, col="purple")
+title("Logistic Regression CME ROC Curve", cex.lab=2)
+temp <- legend("bottomright", legend = c(" ", " ", " ", " ", " "),
+               col = c("red","green","blue","orange","purple"), xjust = 0, yjust = 1,lty = 1, lwd = 2,
+               title = "Line Types")
+text(temp$rect$h + temp$rect$w, temp$text$y, 
+     c("Linear Velocity", "Initial Vellocity", "Final Velocity", "Mass", "KE"), pos = 4)
+```
+
+## References
+
+[1] G. L. Siscoe, “Geomagnetic storms and substorms,” Reviews of Geophysics, vol. 13, no. 3, p. 990, 1975. 
+
+[2] D. G. Cole, “Space weather: its effects and predictability,” in Advances in Space Environment Research, vol. 107, no. 1/2, pp. 295–302, Springer, 2003. 
+
+[3] E. Huttunen, “Geoeffectiveness of cmes in the solar wind,” Proceedings of the International Astronomical Union, vol. 2004, no. IAUS226, pp. 455-456, 2004. 
+
+[4] E. Paouris and H. Mavromichalaki, “Effective acceleration model for the arrival time of interplanetary shocks driven by coronal mass ejections,,” Solar Physics, vol. 292, no. 12, 2017. 
+
+[5] P. Wang, Y. Zhang, L. Feng et al., “A new automatic tool for cme detection and tracking with machine-learning techniques,” The Astrophysical Journal Supplement Series, vol. 244, no. 1, p. 9, 2019. 
+
+[6] B. Vršnak, T. Žic, D. Vrbanec et al., “Propagation of interplanetary coronal mass ejections: the drag-based model,” Solar Physics, vol. 285, no. 1-2, pp. 295–315, 2013. 
+
+[7] S. Poedts, A. Lani, C. Scolini et al., “European heliospheric forecasting information asset 2.0,” Journal of Space Weather and Space Climate, vol. 10, p. 57, 2020.
+
+[8] C. Möstl, A. Isavnin, P. D. Boakes et al., “Modeling observations of solar coronal mass ejections with heliospheric imagers verified with the heliophysics system observatory,” Space Weather, vol. 15, no. 7, pp. 955–970, 2017. 
+
+[9] D. Besliu-Ionescu, D. C. Talpeanu, M. Mierla, and G. M. Muntean, “On the prediction of geoeffectiveness of cmes during the ascending phase of sc24 using a logistic regression method,” Journal of Atmospheric and Solar-Terrestrial Physics, vol. 193, article 105036, 2019. 
+
+[10] N. Srivastava, “A logistic regression model for predicting the occurrence of intense geomagnetic storms,” Annales Geophysicae, vol. 23, no. 9, pp. 2969–2974, 2005. 
+
+[11] D. Besliu-Ionescu and M. Mierla, “Geoeffectiveness prediction of cmes,” Frontiers in Astronomy and Space Sciences, vol. 8, 2021. 
+
+[12] Y.-R. Shi, Y.-H. Chen, S.-Q. Liu et al., “Predicting the cme arrival time based on the recommendation algorithm,” Research in Astronomy and Astrophysics, vol. 21, no. 8, p. 190, 2021. 
+
+[13] S. Yashiro, G. Michalek, and N. Gopalswamy, “A comparison of coronal mass ejections identified by manual and automatic methods,” Annales Geophysicae, vol. 26, no. 10, pp. 3103–3112, 2008. 
+
+[14] I. G. Richardson and H. V. Cane, “Near-earth interplanetary coronal mass ejections during solar cycle 23 (1996 – 2009): catalog and summary of properties,” Solar Physics, vol. 264, no. 1, pp. 189–237, 2010. 

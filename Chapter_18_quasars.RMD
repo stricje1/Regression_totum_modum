@@ -1,0 +1,878 @@
+---
+title: "SDSS Quasar"
+author: "Jeffrey Strickland"
+date: "2022-11-09"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## SDSS_quasar.dat
+
+## Astronomical background
+
+Most or all large galaxies have a massive black hole (MBH, 106-109 Mo solar masses) at the center. Gas from the interstellar medium or a disrupted star may fall onto the MBH through an accretion disk ("to accrete" means "to fall onto"). This accretion disk can become exceedingly hot and can eject a jet of material at relativistic (near the speed of light) velocities. The disk and jet radiate light across the electromagnetic spectrum (radio, infrared, visible, ultraviolet, X-ray, gamma-ray) with great efficiency. In most galaxies today, like our own Milky Way Galaxy, the MBH is starved of gas and little light is produced.  In other galaxies, like Seyfert galaxies or radio galaxies, the light is very strong, particularly in spectral bands other than the visible band where the stars of the host galaxies emit most of their light. In rare cases called quasars, the light from the accreting MBH exceeds the starlight in all spectral bands by enormous factors. These are the brightest objects in the Universe and can be seen even at high redshifts (i.e. great distance from us).
+
+The spectrum, variability and (when resolved in telescopes) structure of quasars are studied in detail to understanding the complex processes of accreting MBHs and their environs.  But an important subfield studies consist of wide-field surveys for quasars and characterize their bulk properties such as brightness in various spectral bands, redshifts, and luminosities. Such survey and photometric (brightness) studies lead to classification of quasar subtypes (e.g. Type I, Type II, radio-loud/radio-quiet, BAL, BL Lacs, Lyman-alpha dropouts), to measurement of the quasar luminosity function (distribution of luminosities), and to cosmic evolution studies (how the population changes with redshift).
+
+For many years, quasar surveys produced rather small samples of 101-103 objects. But the Sloan Digital Sky Survey (SDSS) (York et al. 2000) is performing a unique wide-field photometric and spectroscopic survey leading to a well-defined sample of 104 quasars with very precise photometric measurements in five visible bands and accurate redshifts.  Some of these also have radio, infrared and X-ray detections from other surveys.  The photometric properties from the first SDSS Data Release quasar catalog (Schneider et al. 2003) have been extensively discussed by Richards et al. (2002), Hall et al. (2002), Ivezic et al. (2002), Vignali et al. (2003), Reichard et al. (2003), Pindor et al. (2003), Richards et al. (2003), Pentericci et al. (2003), Zakamska et al. (2003), Wu et al. (2004), Fan et al. (2004), Hopkins et al. (2004), Weinstein et al. (2004), Richards et al. (2004), Collinge et al. (2005), Yip et al. (2005), Yahata et al. (2005), Zakamska et al. (2005), Chiu et al. (2005), Kitsionas et al. (2005), and Vanden Berk et al. (2005). The newer quasar catalog offered here is several times larger than the earlier one and has not yet been studied in detail.
+
+Below are two examples of multivariate relations that were found in the earlier dataset by Weinstein et al. (2004).   The first shows the nonlinear relationship between the (u_mag - g_mag) color index and redshift.  The second shows the non-Gaussian distribution of quasars in the (g_mag - r_mag) vs. (u_mag - g_mag) color-color plot. 
+
+```{r, echo=FALSE}
+library(readr)
+library(dplyr)
+library(nanotime)
+
+data <- read_csv("C:\\Users\\jeff\\Documents\\Data\\SDSS_quasar.csv")
+data <- as.data.frame(data)
+
+#data$z = (data$z-(mean(data$z))/sd(data$z))
+data$g_mag = (data$g_mag-(mean(data$g_mag))/sd(data$g_mag))
+data$r_mag = (data$r_mag-(mean(data$r_mag))/sd(data$r_mag))
+data$i_mag = (data$i_mag-(mean(data$i_mag))/sd(data$i_mag))
+data$z_mag = (data$z_mag-(mean(data$z_mag))/sd(data$z_mag))
+data$u_mag = (data$u_mag-(mean(data$u_mag))/sd(data$u_mag))
+data$Radio = (data$Radio-(mean(data$Radio))/sd(data$Radio))
+data$Xray = (data$`X-ray`-(mean(data$`X-ray`))/sd(data$`X-ray`))
+data$sig_g = (data$sig_g-(mean(data$sig_g))/sd(data$sig_g))
+data$sig_r = (data$sig_r-(mean(data$sig_r))/sd(data$sig_r))
+data$sig_i = (data$sig_i-(mean(data$sig_i))/sd(data$sig_i))
+data$sig_z = (data$sig_z-(mean(data$sig_z))/sd(data$sig_z))
+data$sig_u = (data$sig_u-(mean(data$sig_u))/sd(data$sig_u))
+data$J_mag = (data$J_mag-(mean(data$J_mag))/sd(data$J_mag))
+data$sig_J = (data$sig_J-(mean(data$sig_J))/sd(data$sig_J))
+data$H_mag = (data$H_mag-(mean(data$H_mag))/sd(data$H_mag))
+data$sig_H = (data$sig_H-(mean(data$sig_H))/sd(data$sig_H))
+data$K_mag = (data$K_mag-(mean(data$K_mag))/sd(data$K_mag))
+data$sig_K = (data$sig_K-(mean(data$sig_K))/sd(data$sig_K))
+data$M_i = (data$M_i-(mean(data$M_i))/sd(data$M_i))
+
+z_data <- data[4:16]
+summary(z_data)
+head(z_data,5)
+
+z_mat<-cbind(data[4], data[5], data[7], data[9], data[11], data[13], data[15])
+names(z_mat)
+
+z_df <- as.data.frame(z_mat)
+
+ind <- sample(2, nrow(z_data), replace = TRUE, prob = c(0.7, 0.2))
+train <- z_data[ind==1,]
+test_cv <- z_data[ind==2,]
+
+ind <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.1))
+train <- train[ind==1,]
+test <- train[ind==2,]
+```
+
+
+```{r}
+
+library(ggplot2)
+
+p1 <- ggplot(test, aes(z)) +
+     geom_point(aes(y=u_mag), col = 'magenta') +
+     geom_point(aes(y=g_mag), col = 'green') +
+     geom_point(aes(y=u_mag-g_mag), col = 'orange') +
+     geom_smooth(aes(y=u_mag), method = "loess") +
+     geom_smooth(aes(y=g_mag), method = "loess") +
+     geom_smooth(aes(y=u_mag-g_mag), method = "loess")
+
+
+p2 <- ggplot(test, aes(x=u_mag-g_mag, y=g_mag-r_mag)) +
+     geom_point(aes(x=u_mag-g_mag,y=g_mag-r_mag), col = 'orange') +
+     geom_point(aes(x=g_mag-r_mag, y=u_mag-g_mag), col = 'green')
+p2
+
+p <- ggplot(test, aes(x=g_mag-r_mag, y=u_mag-g_mag)) +
+     geom_point(aes(x=u_mag-g_mag,y=g_mag-r_mag), col = 'magenta') 
+p
+```
+
+## Dataset
+
+The SDSS team has recently produced a catalog of 46,420 quasars from its 3rd Data Release, 95% of them previously unknown. The development of the catalog is presented by Schneider et al. (2005).  The dataset offered here is called SDSS_quasar.dat has all 46,420 rows but omits some technical columns. The 23 columns included are:
+  
+1. SDSS J: SDSS designation
+2. R.A.: Right Ascension (sky coordinate equivalent to longitude on the Earth, 0 to 360 degrees)
+3. Dec.: Declination (sky coordinate equivalent to latitude on the Earth, -90 to +90 degrees)
+4. z: Redshift (scales with distance)
+5. u_mag: Brightness in the u (ultraviolet) band in magnitudes.  Magnitudes are an inverted logarithmic unit of brightness (a quasar with u_mag=16 is 100-times brighter than one with u_mag=21).
+6. sig_u: Measurement error of u_mag.  The heteroscedastic measurement errors for each magnitude are determined by the SDSS team from knowledge of the observing conditions, detector background, and other technical considerations.
+7. g_mag: Brightness in the g (green) band
+8. sig_g
+9. r_mag: Brightness in the r (red) band
+10. sig_r
+11. i_mag: Brightness in the i (more red) band
+12. sig_i
+13. z_mag: Brightness in the z (even more red) band
+14. sig_z
+15. Radio: Brightness in the radio band, in "magnitudes" scaled from the flux density measured in the NRAO FIRST survey at 20cm.  "0" indicates the quasar is undetected by FIRST, while "-1" indicates it was not observed by FIRST.
+16. X-ray: Brightness in the X-ray band, in log(Count rate) from the ROSAT All-Sky Survey (RASS) in the 0.2-2.4 keV band.  "-9" indicates not detected by RASS.
+17. J: Brightness in the near-infrared J band, in magnitudes, from the 2MASS Point Source Catalog.
+18. sig_J
+19. H: Brightness in the near-infrared H band
+20. sig_H
+21. K: Brightness in the near-infrared K band
+22. sig_K
+23. M_i: The absolute magnitude in the i band.  This is an inverted logarithmic measure of the intrinsic luminosity of the quasar.  A quasar with M_i=-29 is 100-times more luminous than one with M_i=-24.
+
+## Statistical exercises
+
+The serious student of this database should examine the papers referenced above. Following are some issues that might be examined:
+  
+  In paired ugriz photometry plots, find outliers and compare with measurement errors.  Note the survey structure in the i_mag distribution: quasar identifications are complete below i=19 and incomplete for fainter magnitudes.
+Seek a photometric predictor for redshift.  This might involve a regression of z as a function of ugriz magnitudes and colors (e.g. u-g, g-r).  It is important to quantify the precision of the predictor as a function of photometric properties.
+Seek redshift dependences (i.e. cosmic evolution) in the X-ray/optical and X-ray/radio brightness ratios.
+Seek a photometric predictor for radio-loudness. 
+Seek a photometric predictor for high-redshift (z>4 or 5). These may appear as outliers in a (u-g) vs. (g-r) color-color plot.
+Study the effect of Lyman-alpha forest absorption.  This appears as a progressive decline of brightness in the bluer bands with redshift.  By z~5, the ugr colors are all affected compared to i magnitudes.
+Study relationships between X-ray and optical emission, the ratio (X-ray - i_mag), and other properties.
+Note the complicated structure of plots involving M_i.  Classify and understanding the origin of different types. 
+Study the subclasses of dust-reddened and BAL (broad absorption line) quasars. See the complex color vs. redshift distributions discussed by from an earlier SDSS quasar survey.
+
+For further information on the SDSS quasar dataset and astrophysical interpretation of its structure, please contact Daniel Vanden Berk (Penn State University)
+
+```{r}
+library(readr)
+library(dplyr)
+library(nanotime)
+
+data <- read_csv("C:\\Users\\jeff\\Documents\\Data\\SDSS_quasar.csv")
+data <- as.data.frame(data)
+
+data_df <- data[3:23]
+
+summary(z_data)
+names(z_data)
+
+names(data_df)
+
+data_df$ug <- data_df$u_mag - data_df$g_mag
+data_df$gr <- data_df$g_mag - data_df$r_mag
+data_df$ir <- data_df$i_mag - data_df$r_mag
+
+#data$z = (data$z-(mean(data$z))/sd(data$z))
+data_df$g_mag = (data_df$g_mag-(mean(data_df$g_mag))/sd(data_df$g_mag))
+data_df$r_mag = (data_df$r_mag-(mean(data_df$r_mag))/sd(data_df$r_mag))
+data_df$i_mag = (data_df$i_mag-(mean(data_df$i_mag))/sd(data_df$i_mag))
+data_df$z_mag = (data_df$z_mag-(mean(data_df$z_mag))/sd(data_df$z_mag))
+data_df$u_mag = (data_df$u_mag-(mean(data_df$u_mag))/sd(data_df$u_mag))
+data_df$Radio = (data_df$Radio-(mean(data_df$Radio))/sd(data_df$Radio))
+#data_df$Xray = (data_df$`X-ray`-(mean(data_df$`X-ray`))/sd(data_df$`X-ray`))
+data_df$sig_g = (data_df$sig_g-(mean(data_df$sig_g))/sd(data_df$sig_g))
+data_df$sig_r = (data_df$sig_r-(mean(data_df$sig_r))/sd(data_df$sig_r))
+data_df$sig_i = (data_df$sig_i-(mean(data_df$sig_i))/sd(data_df$sig_i))
+data_df$sig_z = (data_df$sig_z-(mean(data_df$sig_z))/sd(data_df$sig_z))
+data_df$sig_u = (data_df$sig_u-(mean(data_df$sig_u))/sd(data_df$sig_u))
+data_df$J_mag = (data_df$J_mag-(mean(data_df$J_mag))/sd(data_df$J_mag))
+data_df$sig_J = (data_df$sig_J-(mean(data_df$sig_J))/sd(data_df$sig_J))
+data_df$H_mag = (data_df$H_mag-(mean(data_df$H_mag))/sd(data_df$H_mag))
+data_df$sig_H = (data_df$sig_H-(mean(data_df$sig_H))/sd(data_df$sig_H))
+data_df$K_mag = (data_df$K_mag-(mean(data_df$K_mag))/sd(data_df$K_mag))
+data_df$sig_K = (data_df$sig_K-(mean(data_df$sig_K))/sd(data_df$sig_K))
+data_df$M_i = (data_df$M_i-(mean(data_df$M_i))/sd(data_df$M_i))
+data_df$z_spec = (data_df$z_spec-(mean(data_df$z_spec))/sd(data_df$z_spec))
+data_df$ug = (data_df$ug-(mean(data_df$ug))/sd(data_df$ug))
+data_df$gr = (data_df$gr-(mean(data_df$gr))/sd(data_df$gr))
+data_df$ir = (data_df$ir-(mean(data_df$ir))/sd(data_df$ir))
+```
+
+
+```{r}
+z_data <- data_df
+summary(z_data)
+```
+
+
+```{r}
+z_mat<-cbind(data[4], data[5], data[7], data[9], data[11], data[13], data[15])
+names(z_mat)
+
+z_df <- as.data.frame(z_mat)
+```
+
+
+```{r}
+ind <- sample(2, nrow(z_data), replace = TRUE, prob = c(0.8, 0.2))
+train <- z_data[ind==1,]
+test_cv <- z_data[ind==2,]
+
+ind <- sample(2, nrow(train), replace = TRUE, prob = c(0.8, 0.2))
+train <- train[ind==1,]
+test <- train[ind==2,]
+```
+
+
+```{r}
+p3 <- with(test, scatter.smooth(z, g_mag, col='blue', lpars = list(col = "red", lwd = 3, lty = 3)))
+p3
+
+```
+
+
+```{r, fig.height = 6, fig.width = 6}
+z_mat<-cbind(data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15], data[16])
+names(z_mat)
+corr <- cor(z_mat)
+par(oma=c(8,0,0,2))
+par(mar=c(4,0,0,2))
+
+p4 <- heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+p4
+
+```
+
+```{r}
+library(performance)
+z_mat<-cbind(data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15], data[16])
+
+zz_mat <- z_mat<-cbind(z_data$z,z_data$ir,z_data$ug,z_data$gr,z_data$Radio)
+
+corr<-cor(zz_mat)
+heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+
+
+zz_df <- as.data.frame(zz_mat) 
+glm_mod2 <-glm(z_data$z~z_data$ug+z_data$gr+z_data$ir+z_data$Radio, family='gaussian', data= zz_df)
+summary(glm_mod2)
+model_performance(glm_mod2)
+
+```
+
+```{r, fig.height = 8, fig.width = 8}
+# load package
+library(ggstatsplot)
+
+z_mat<-cbind(data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15], data[16])
+
+# correlogram
+ggstatsplot::ggcorrmat(
+  data = z_mat,
+  type = "parametric", # parametric for Pearson, nonparametric for Spearman's correlation
+  colors = c("darkred", "white", "steelblue") # change default colors
+)
+```
+
+
+
+```{r}
+glm_mod1 <- glm(z ~ ., family="gaussian", data = train)
+summary(glm_mod1)
+```
+
+
+```{r}
+pred <- predict(glm_mod1, newdata=train)
+pred_cv <- predict(glm_mod1, newdata=test_cv)
+
+
+library("performance")
+r2(glm_mod1)
+```
+
+plot adapted from https://github.com/allisonhorst/palmerpenguins
+
+```{r}
+library(ggplot2)
+library(ragg)
+library(palmerpenguins)
+
+#check_model(glm_mod1)
+model_performance(glm_mod1)
+```
+
+
+
+```{r}
+Y <- train[1]
+Y_cv <- test_cv[1]
+ztrain_cv <- cbind(train[1], train[2], train[4], train[6], train[8], train[10], train[12], train[13])
+ztest_cv <- cbind(test_cv[1], test_cv[2], test_cv[4], test_cv[6], test_cv[8], test_cv[10], test_cv[12], test_cv[13])
+```
+
+
+
+```{r}
+library(ggplot2)
+library(ragg)
+
+check_model(glm_mod1)
+
+model_performance(glm_mod1)
+```
+
+
+
+```{r}
+glm_mod2 <- glm(z ~ log(u_mag + g_mag) +log(Radio), family="gaussian", data = ztrain_cv)
+summary(glm_mod2)
+
+p6 <- check_model(glm_mod2)
+p6
+
+
+model_performance(glm_mod2)
+```
+
+
+## Moment Hierarchical Generalized Linear Models
+### Description
+
+mhglm is used to fit a moment hierarchical generalized linear model of one level. mhglm_ml is used to fit a moment hierarchical generalized linear model of arbitrary number of levels (including one level).
+
+
+```{r}
+library(mbest)
+library("performance")
+
+mhglm_mod <- mhglm_ml(z ~ g_mag + r_mag + u_mag + i_mag +(g_mag + r_mag + u_mag + i_mag | Radio), family = gaussian, data=train)
+
+summary(mhglm_mod)
+
+pred2 <- predict(mhglm_mod, newdata=train)
+pred_cv2 <- predict(mhglm_mod, newdata=test_cv)
+
+mhglm_mod$dispersion
+
+r2(mhglm_mod)
+fixef(mhglm_mod)
+VarCorr(mhglm_mod)
+ranef(mhglm_mod)
+
+SSE <- sum((pred2 - train$z)^2)
+SSE_val <- sum((pred_cv2 - test_cv$z)^2)
+SSR <- sum((Y - mean(Y))^2)
+SSR_val <- sum((Y_cv - mean(Y_cv))^2)
+SST <- SSR + SSE
+SST_val<-SSR_val+SSE_val
+R_sq <- SSR / SST
+RMSE = sqrt(SSE/nrow(train))
+val_R_sq <- SSR_val / SST_val
+val_RMSE = sqrt(SSE_val/nrow(test_cv))
+print(paste("glm1 R-square =", R_sq))
+print(paste("glm1 Regression RMSE =", RMSE))
+print(paste("glm1 CV R-square =", val_R_sq))
+print(paste("glm1 CV RMSE =", val_RMSE))
+```
+
+
+
+```{r}
+GLM1_Train_SSE <- sum((pred2 - train$z)^2)/2
+paste("Train SSE: ", round(GLM1_Train_SSE, 4))
+
+Test_GLM1_Output <- predict(mhglm_mod, newdata = ztest_cv[2:8])
+GLM1_Test_SSE <- sum((Test_GLM1_Output - ztest_cv[1])^2)/2
+paste("Test SSE: ", round(GLM1_Test_SSE, 4))
+```
+
+# I'm explicitly calling the device functions so you can see the dimensions 
+# used
+
+```{r}
+p1 <- check_model(glm_mod)
+p1
+
+```
+
+
+The compute() function outputs the response variable, in our case the Residuary_Resist, as estimated by the neural network. Once we have the ANN estimated response we can compute the test SSE. Comparing the test error of 0.0084 to the training error of 0.0361 we see that in our case our test error is smaller than our training error.
+
+## Regression Hyperparameters
+
+We have constructed the most basic of regression ANNs without modifying any of the default hyperparameters associated with the neuralnet() function. We should try and improve the network by modifying its basic structure and hyperparameter modification. To begin we will add depth to the hidden layer of the network, then we will change the activation function from the logistic to the tangent hyperbolicus (tanh) to determine if these modifications can improve the test data set SSE. When using the tanh activation function, we first must rescale the data from [0,1]
+to [−1,1] using the rescale package. For the purposes of this exercise we will use the same random seed for reproducible results, generally this is not a best practice.
+
+```{r}
+
+z_data <- data[4:16]
+summary(z_data)
+head(z_data,5)
+
+z_mat<-cbind(data[4], data[5], data[7], data[9], data[11], data[13], data[15], data[16])
+names(z_mat)
+
+z_df <- as.data.frame(z_mat)
+z_df$Xray <- z_df$`X-ray`
+z_df <- z_df[-8]
+
+ind <- sample(2, nrow(z_df), replace = TRUE, prob = c(0.7, 0.2))
+ztrain <- z_df[ind==1,]
+ztest_cv <- z_df[ind==2,]
+
+ind <- sample(2, nrow(ztrain), replace = TRUE, prob = c(0.7, 0.3))
+ztrain <- ztrain[ind==1,]
+ztest <- ztrain[ind==2,]
+
+Y <- ztrain[1]
+Y_cv <- ztest_cv[1]
+X <- cbind(ztrain[2], ztrain[3], ztrain[4], ztrain[5], ztrain[6], ztrain[7], ztrain[8])
+X_cv <- cbind(ztest_cv[2], ztest_cv[3], ztest_cv[4], ztest_cv[5], ztest_cv[6], ztest_cv[7], ztest_cv[8])
+```
+
+
+```{r}
+library(mbest)
+library(readr)
+library(dplyr)
+library("performance")
+
+data <- read_csv("https://raw.githubusercontent.com/stricje1/Data/master/SDSS_quasar.csv")
+data_df <- as.data.frame(data)
+
+data_df <- data_df[3:26]
+
+
+data_df$ug <- data_df$u_mag-data_df$g_mag
+data_df$gr <- data_df$g_mag-data_df$r_mag
+data_df$Dgi <-(data_df$g_mag - data_df$i_mag)-mean(data_df$g_mag - data_df$i_mag)
+data_df$Xray = data_df$`X-ray`
+summary(data_df)
+
+
+names(data_df)
+
+#data$z = (data$z-(mean(data$z))/sd(data$z))
+data_df$g_mag = (data_df$g_mag-(mean(data_df$g_mag))/sd(data_df$g_mag))
+data_df$r_mag = (data_df$r_mag-(mean(data_df$r_mag))/sd(data_df$r_mag))
+data_df$i_mag = (data_df$i_mag-(mean(data_df$i_mag))/sd(data_df$i_mag))
+data_df$z_mag = (data_df$z_mag-(mean(data_df$z_mag))/sd(data_df$z_mag))
+data_df$u_mag = (data_df$u_mag-(mean(data_df$u_mag))/sd(data_df$u_mag))
+data_df$Radio = (data_df$Radio-(mean(data_df$Radio))/sd(data_df$Radio))
+data_df$Xray  = (data_df$Xray-(mean(data_df$Xray))/sd(data_df$Xray))
+data_df$sig_g = (data_df$sig_g-(mean(data_df$sig_g))/sd(data_df$sig_g))
+data_df$sig_r = (data_df$sig_r-(mean(data_df$sig_r))/sd(data_df$sig_r))
+data_df$sig_i = (data_df$sig_i-(mean(data_df$sig_i))/sd(data_df$sig_i))
+data_df$sig_z = (data_df$sig_z-(mean(data_df$sig_z))/sd(data_df$sig_z))
+data_df$sig_u = (data_df$sig_u-(mean(data_df$sig_u))/sd(data_df$sig_u))
+data_df$J_mag = (data_df$J_mag-(mean(data_df$J_mag))/sd(data_df$J_mag))
+data_df$sig_J = (data_df$sig_J-(mean(data_df$sig_J))/sd(data_df$sig_J))
+data_df$H_mag = (data_df$H_mag-(mean(data_df$H_mag))/sd(data_df$H_mag))
+data_df$sig_H = (data_df$sig_H-(mean(data_df$sig_H))/sd(data_df$sig_H))
+data_df$K_mag = (data_df$K_mag-(mean(data_df$K_mag))/sd(data_df$K_mag))
+data_df$sig_K = (data_df$sig_K-(mean(data_df$sig_K))/sd(data_df$sig_K))
+data_df$M_i = (data_df$M_i-(mean(data_df$M_i))/sd(data_df$M_i))
+data_df$z_spec = (data_df$z_spec-(mean(data_df$z_spec))/sd(data_df$z_spec))
+data_df$ug = (data_df$ug-(mean(data_df$ug))/sd(data_df$ug))
+data_df$gr = (data_df$gr-(mean(data_df$gr))/sd(data_df$gr))
+
+#data_df <- data_df[-13]
+#names(data_df)
+
+scale11 <- function(x) {
+  (x - mean(x))/sd(x)
+}
+
+data_df <- data_df %>% mutate_all(scale11)
+summary(data_df)
+
+ind <- sample(2, nrow(data_df), replace = T, prob = c(0.7, 0.3))
+train <- data_df[ind==1,]
+test_cv <- data_df[ind==2,]
+
+ind <- sample(2, nrow(train), replace = T, prob = c(0.8, 0.2))
+train <- train[ind==1,]
+test<- train[ind==2,]
+```
+
+## Hyperparameter Tuning
+
+```{r}
+set.seed(12321)
+
+GLM1 <- glm(z ~ ., family="gaussian", data = train)
+summary(GLM1)
+#plot(GLM1, rep = 'best')
+
+GLM1_Train_SSE <- sum((predict(GLM1) - GLM1$y)^2)/2
+
+Test_GLM1_Output <- predict(GLM1,newdata = test_cv[2:26])
+GLM1_Test_SSE <- sum((Test_GLM1_Output - test_cv[1])^2)/2
+paste("Train SSE: ", round(GLM1_Train_SSE, 4))
+paste("Test SSE: ", round(GLM1_Test_SSE, 4))
+
+```
+
+
+```{r}
+set.seed(12321)
+
+
+GLM2 <- glm(z ~ ug + gr + Dgi + z_spec + J_mag + K_mag + u_mag + M_i + Radio + Xray, family='gaussian', data= train)
+summary(GLM2)
+## Training Error
+GLM2_Train_SSE <- sum((predict(GLM2) - GLM2$y)^2)/2
+
+## Test Error
+GLM2_Output <- predict(GLM2,newdata = test_cv[2:26])
+GLM2_Test_SSE <- sum((GLM2_Output -  test_cv[1])^2)/2
+paste("Train SSE: ", round(GLM2_Train_SSE, 4))
+paste("Test SSE: ", round(GLM2_Test_SSE, 4))
+
+
+
+```
+
+
+# Rescale for tanh activation function
+
+```{r}
+# 2-Hidden Layers, Layer-1 4-neurons, Layer-2, 1-neuron, tanh activation
+# function
+set.seed(12323)
+GLM3 <- glm(z ~ (sig_u + sig_g + sig_i + sig_r + sig_H + sig_J + sig_K + Radio + Xray + M_i + z_spec + ug + gr),
+                       data = train, 
+                       family="gaussian")
+summary(GLM3)
+## Training Error
+GLM3_Train_SSE <- sum((predict(GLM3) - GLM3$data$z)^2)/2
+
+## Test Error
+GML3_Test_Output <- predict(GLM3, newdata = test_cv[2:26])
+GLM3_Test_SSE <- sum((GML3_Test_Output - test_cv[1])^2)/2
+paste("Train SSE: ", round(GLM3_Train_SSE, 4))
+paste("Test SSE: ", round(GLM3_Test_SSE, 4))
+```
+
+# 1-Hidden Layer, 1-neuron, tanh activation function
+
+```{r}
+set.seed(12324)
+library(mbest)
+
+scale12 <- function(x) {
+  (x - mean(x))/sd(x)
+}
+
+data_s1 <- data_df %>% mutate_all(scale12)
+summary(data_s1)
+
+scale12 <- function(x) {
+  (2 * ((x - min(x))/(max(x) - min(x)))) - 1
+}
+data_s2 <- data_s1[1:26] %>% mutate_all(scale12)
+
+data_s3 <- as.data.frame(data_s2)
+
+ind <- sample(2, nrow(data_s3), replace = TRUE, prob = c(0.7, 0.3))
+train <- data_s3[ind==1,]
+test_cv <- data_s3[ind==2,]
+```
+
+
+```{r}
+set.seed(12324)
+GLM4<- mhglm_ml(z ~ J_mag  + 
+                    z_spec + 
+                    Dgi    + 
+                    ug     + gr   +                   
+                    Xray   + 
+                   (J_mag  + 
+                    K_mag  + 
+                    H_mag  + 
+                    g_mag  + sig_g + 
+                    u_mag  + sig_u +
+                    r_mag  + 
+                    i_mag  + 
+                    z_spec + 
+                    Dgi    + 
+                    ug     + gr
+                   |Radio), 
+                    family = gaussian, data=train)
+summary(GLM4)
+```
+
+
+```{r}
+
+## Training Error
+GLM4_Train_SSE <- sum((predict(GLM4) - GLM4$model$z)^2)/2
+
+## Test Error
+GLM4_Test_Output <- predict(GLM4, newdata = test_cv[2:26])
+GLM4_Test_SSE <- sum((GLM4_Test_Output - test_cv[1])^2)/2
+GLM4_Train_SSE
+GLM4_Test_SSE
+```
+
+```{r}
+set.seed(23134)
+ind <- sample(2, nrow(data_s3), replace = T, prob = c(0.5, 0.5))
+pca_train <- data_s3[ind==1,]
+pca_test <- data_s3[ind==2,]
+
+ind <- sample(2, nrow(train), replace = T, prob = c(0.5, 0.5))
+pca_train <- train[ind==1,]
+pca_test_cv<- train[ind==2,]
+
+pca_train.pca <- prcomp(pca_train[1:22], center = TRUE,scale. = TRUE)
+pca_test.pca <- prcomp(pca_test[1:22], center = TRUE,scale. = TRUE)
+pca_test_cv.pca <- prcomp(pca_test_cv[1:22], center = TRUE,scale. = TRUE)
+```
+
+
+```{r}
+library(devtools)
+install_github("vqv/ggbiplot")
+```
+
+
+```{r, fig.width=10, fig.height = 6}
+library(ggbiplot)
+
+ggbiplot(pca_test.pca)
+```
+
+
+```{r}
+ggbiplot(pca_test.pca,ellipse=TRUE,obs.scale = 1, var.scale = 1)
+```
+
+
+
+```{r, fig.width=10, fig.height = 6}
+ggbiplot(pca_test.pca,ellipse=TRUE,obs.scale = 1, var.scale = 5,  labels=rownames(pca_test), groups=pca_test$z_cat) +
+  ggtitle("PCA of mtcars dataset")+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+```
+
+```{r}
+pca.trn <- as.data.frame(pca_train.pca$x)
+pca.tst <- as.data.frame(pca_test.pca$x)
+pca.tst_cv <- as.data.frame(pca_test_cv.pca$x)
+
+GLM5 <- glm(PC1 ~ ., family="gaussian", data = pca.tst)
+summary(GLM5)
+#plot(GLM1, rep = 'best')
+
+GLM5_Train_SSE <- sum((predict(GLM5) - GLM5$y)^2)/2
+
+Test_GLM5_Output <- predict(GLM5,newdata = pca.tst_cv)
+GLM5_Test_SSE <- sum((Test_GLM5_Output - pca.tst_cv)^2)/20000
+paste("Train SSE: ", round(GLM5_Train_SSE, 4))
+paste("Test SSE: ", round(GLM5_Test_SSE, 4))
+```
+
+
+```{r, fig.width=10, fig.height = 6}
+corr <- cor(pca.tst)
+par(oma=c(6,0,0,2))
+par(mar=c(2,0,0,2))
+heatmap(corr, Colv = NA, Rowv = NA, scale="column")
+```
+
+```{r}
+pca.plot <- as.data.frame(cbind(pca.tst$PC2, pca.tst$PC3, pca.tst$PC4, pca.tst$PC5,pca.tst$PC1,pca.tst$PC6, pca.tst$PC7, pca.tst$PC8))
+p_ <- GGally::print_if_interactive
+pm <- ggpairs(pca.plot, title = "Scatterplot Matrix of the Features of the Quasar-PCA Set",  ggplot2::aes(colour= ''))
+p_(pm)
+```
+
+
+```{r}
+data.plot <- as.data.frame(cbind(test_cv$u_mag, test_cv$sig_u, test_cv$g_mag, test_cv$sig_g, test_cv$r_mag, test_cv$sig_r, test_cv$i_mag, test_cv$sig_i))
+q_ <- GGally::print_if_interactive
+qm <- ggpairs(data.plot, title = "Scatterplot Matrix of the Features of the Quasar Set",  ggplot2::aes(colour= ''))
+q_(qm)
+```
+
+
+
+```{r}
+plot(GLM5, rep = 'best', col = 'green', lwd = 2)
+```
+
+
+
+```{r, fig.width=10, fig.height = 6}
+# load package
+library(ggstatsplot)
+
+z_mat <- cbind(pca.trn[1], pca.trn[2], pca.trn[3], pca.trn[4], pca.trn[5], pca.trn[6], pca.trn[7], pca.trn[8], pca.trn[9], pca.trn[10], pca.trn[11], pca.trn[12], pca.trn[13], pca.trn[14], pca.trn[15], pca.trn[16], pca.trn[17], pca.trn[18], pca.trn[19], pca.trn[20], pca.trn[21], pca.trn[22])
+
+# correlogram
+ggstatsplot::ggcorrmat(
+  data = z_mat,
+  type = "parametric", 
+  colors = c("darkred", "white", "steelblue") 
+)
+```
+
+
+```{r}
+set.seed(1234)
+
+GLM6 <- rlm(z ~ ug + gr + Dgi + z_spec + J_mag + K_mag + u_mag + M_i + Radio + Xray, psi = psi.huber, data= train)
+
+```
+
+
+```{r}
+#RLM
+GLM6_Train_SSE <- sum((predict(GLM6) - train$z)^2)/2
+
+Test_GLM6_Output <- predict(GLM6, newdata = test_cv[2:26])
+GLM6_Test_SSE <- sum((Test_GLM6_Output - test_cv[1])^2)/2
+paste("RLM Train SSE: ", round(GLM6_Train_SSE, 4))
+paste("RLM Test SSE : ", round(GLM6_Test_SSE, 4))
+
+```
+
+# Bar plot of results
+
+```{r}
+GLM1_Diff <- abs(GLM1_Train_SSE - GLM1_Test_SSE)
+GLM2_Diff <- abs(GLM2_Train_SSE - GLM2_Test_SSE)
+GLM3_Diff <- abs(GLM3_Train_SSE - GLM3_Test_SSE)
+GLM4_Diff <- abs(GLM4_Train_SSE - GLM4_Test_SSE)
+GLM5_Diff <- abs(GLM5_Train_SSE - GLM5_Test_SSE)
+GLM6_Diff <- abs(GLM6_Train_SSE - GLM6_Test_SSE)
+
+# Bar plot of results
+Regression_GLM_Errors <- tibble(Network = 
+          rep(c("GLM1", "GLM2", "GLM3", "GLM4", "GLM5"), each = 3), 
+          DataSet = rep(c("ztrain",  "ztest_cv",  "diff"), time = 5), 
+                    SSE = c(GLM1_Train_SSE, GLM1_Test_SSE, GLM1_Diff,
+                            GLM2_Train_SSE, GLM2_Test_SSE, GLM2_Diff,
+                            GLM3_Train_SSE, GLM3_Test_SSE, GLM3_Diff,
+                            GLM4_Train_SSE, GLM4_Test_SSE, GLM4_Diff,
+                            GLM5_Train_SSE, GLM5_Test_SSE, GLM5_Diff))
+
+library(ggplot2)
+
+
+#setwd("C:/Users/jeff/Documents/R")
+p5<-Regression_GLM_Errors %>% 
+  ggplot(aes(Network, SSE, fill = DataSet)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Regression GLM's SSE")
+#png(filename = "plot5.png", width = 6, height = 5, units = "in", res = 300)
+p5
+
+
+```
+
+As evident from the plot, we see that the best regression ANN we found was Craft_NN2 with a training and test SSE of 0.0188 and 0.0057. We make this determination by the value of the training and test SSEs only. Craft_NN2’s structure is presented here:
+
+--------------------------------------------
+
+```{r}
+p8 <- plot.lme(GLM4)
+p9 <- plot.default(GLM4_Test_Output, test$z)
+p8
+p9
+
+```
+
+
+```{r}
+library(GGally)
+p_ <- GGally::print_if_interactive
+pm <- ggpairs(test, title = "Scatterplot Matrix of the Features of the Quasar Set",  ggplot2::aes(colour= ''))
+p_(pm)
+```
+
+
+```{r}
+heatmap(GLM4$fit$coefficient.cov, Colv = NA, Rowv = NA, scale="column")
+```
+
+
+```{r}
+print(paste("-----Table of Sums of Square Errors------"))
+print(paste("Model  | Train SEE          | Test SSE          | Ratio"))
+print(paste("GLM1   |", GLM1_Train_SSE, "|" ,GLM1_Test_SSE, "|" ,GLM1_Train_SSE/GLM1_Test_SSE)) 
+print(paste("GLM2   |", GLM2_Train_SSE, "|" ,GLM2_Test_SSE, "|" ,GLM2_Train_SSE/GLM2_Test_SSE)) 
+print(paste("GLM3   |", GLM3_Train_SSE, "|" ,GLM3_Test_SSE, "|" ,GLM3_Train_SSE/GLM3_Test_SSE)) 
+print(paste("GLM4   |", GLM4_Train_SSE, "|" ,GLM4_Test_SSE, "|" ,GLM4_Train_SSE/GLM4_Test_SSE))
+print(paste("GLM5   |", GLM5_Train_SSE, "|" ,GLM5_Test_SSE, "|" ,GLM5_Train_SSE/GLM5_Test_SSE))
+print(paste("GLM6   |", GLM6_Train_SSE, "|" ,GLM6_Test_SSE, "|" ,GLM6_Train_SSE/GLM6_Test_SSE))
+```
+
+----------------------------------------------------
+
+```{r}
+scale11 <- function(x) {
+  (x - mean(x))/sd(x)
+}
+
+data_df <- data_df %>% mutate_all(scale11)
+names(data_df)
+
+ind <- sample(2, nrow(data_df), replace = T, prob = c(0.7, 0.3))
+train <- data_df[ind==1,]
+test_cv <- data_df[ind==2,]
+
+ind <- sample(2, nrow(train), replace = T, prob = c(0.8, 0.2))
+train <- train[ind==1,]
+test<- train[ind==2,]
+```
+
+
+```{r}
+set.seed(1234)
+
+model_lm  <-  lm(z ~ ug + gr + Dgi + z_spec + J_mag + K_mag + u_mag + M_i + Radio + Xray, data = train)
+model_glm <- glm(z ~ ug + gr + Dgi + z_spec + J_mag + K_mag + u_mag + M_i + Radio + Xray, family = 'gaussian', data = train)
+model_rlm <- rlm(z ~ ug + gr + Dgi + z_spec + J_mag + K_mag + u_mag + M_i + Radio + Xray, psi = psi.huber, data= train)
+
+```
+
+
+```{r}
+#LM
+LM_Train_SSE <- sum((predict(model_lm) - train$z )^2)/2
+
+Test_LM_Output <- predict(model_lm, newdata = test_cv[2:26])
+LM_Test_SSE <- sum((Test_LM_Output - test_cv[1])^2)/2
+paste("LM  Train SSE: ", round(LM_Train_SSE, 4))
+paste("LM  Test SSE :  ", round(LM_Test_SSE, 4))
+
+#GLM
+GLM_Train_SSE <- sum((predict(model_glm) - train$z)^2)/2
+
+Test_GLM_Output <- predict(model_glm,newdata = test_cv[2:26])
+GLM_Test_SSE <- sum((Test_GLM_Output - test_cv[1])^2)/2
+paste("GLM Train SSE: ", round(GLM_Train_SSE, 4))
+paste("GLM Test SSE :  ", round(GLM_Test_SSE, 4))
+
+#RLM
+RLM_Train_SSE <- sum((predict(model_rlm) - train$z)^2)/2
+
+Test_RLM_Output <- predict(model_rlm, newdata = test_cv[2:26])
+RLM_Test_SSE <- sum((Test_RLM_Output - test_cv[1])^2)/2
+paste("RLM Train SSE: ", round(RLM_Train_SSE, 4))
+paste("RLM Test SSE : ", round(RLM_Test_SSE, 4))
+
+```
+
+
+```{r}
+LM_Diff  <- abs(LM_Train_SSE - LM_Test_SSE)
+GLM_Diff <- abs(GLM_Train_SSE - GLM_Test_SSE)
+RLM_Diff <- abs(RLM_Train_SSE - RLM_Test_SSE)
+
+# Bar plot of results
+Regression_Errors <- tibble(Network = 
+          rep(c("LM", "GLM", "RLM"), each = 3), 
+          DataSet = rep(c("train","test_cv","diff"),time= 3), 
+                  SSE = c(LM_Train_SSE, LM_Test_SSE, LM_Diff,
+                        GLM_Train_SSE, GLM_Test_SSE, GLM_Diff,
+                        RLM_Train_SSE, RLM_Test_SSE, RLM_Diff
+                        ))
+
+library(ggplot2)
+
+#setwd("C:/Users/jeff/Documents/R")
+p5 <- Regression_Errors %>% 
+  ggplot(aes(Network, SSE, fill = DataSet)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Regression Models SSE")
+p5
+```
+

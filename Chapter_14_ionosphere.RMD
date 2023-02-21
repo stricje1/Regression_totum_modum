@@ -1,0 +1,582 @@
+---
+title: "Ionosphere"
+author: "Jeffrey Strickland"
+date: '2022-09-05'
+output: word_document
+---
+
+```{r caret_opts, include = FALSE}
+knitr::opts_chunk$set(cache = TRUE, autodep = TRUE, fig.align = "center", warning = FALSE, message = FALSE, dpi = 300)
+```
+
+## Radar Data
+This radar data was collected by a system in Goose Bay, Labrador.  This system consists of a phased array of 16 high-frequency antennas with a total transmitted power on the order of 6.4 kilowatts.  See [1] for more details.  The targets were free electrons in the ionosphere. "Good" radar returns are those showing evidence of some type of structure in the ionosphere.  "Bad" returns are those that do not; their signals pass through the ionosphere [1].  
+
+Received signals were processed using an autocorrelation function whose arguments are the time of a pulse and the pulse number.  There were 17 pulse numbers for the Goose Bay system.  Instances in this database are described by 2 attributes per pulse number, corresponding to the complex values returned by the function resulting from the complex electromagnetic signal.
+
+The instances that comprise the dataset represent:
+
+* There are 34 predictors in columns 1 through 34. All 34 are continuous
+* The 35th attribute is either "good" or "bad" according to the definition summarized above.
+
+## Data Preprocessing
+
+### Load the Data and Print a Summary
+First, we load the data into R Studio using `read.csv` to read the ionosphere file into R Studio. We also print a summary of the data, as has been our custom.
+
+```{r}
+ion_data <- read.csv("C:/Users/jeff/Documents/Data/ionosphere.csv")
+summary(ion_data)
+```
+
+### Encode Character Variable
+Here, we encode the variable "Class" with numeric values 1 and 0, representing the "Class" variable, where 1 = "good" and 0 = "bad". We have previous perform this transformation using `LabelEncoder` from the `superml` package.
+
+```{r}
+library(superml)
+lbl = LabelEncoder$new()
+ion_data$Y = lbl$fit_transform(ion_data$Class)
+```
+
+After running the above script we get the new column `Y` comprised of `0`s and `1`s, so we can drop the `Class` column.
+ 
+```{r}
+drop<-"Class"
+ion_data = ion_data[!(names(ion_data) %in% drop)]
+```
+
+### Train-Test Split
+
+We do not use this immediately, but we have defined it in anticipation of using it later. Here, we split the data into 60% train data and 40% test data.
+
+```{r}
+library(caTools)
+samples<-sample.split(ion_data,SplitRatio = 0.6)
+# Train data
+ion_trn<- subset(ion_data,samples==TRUE)
+# Test data
+ion_tst<- subset(ion_data,samples==FALSE)
+```
+
+## Fitting the model
+Here, we train a model using the `glm()` function from the `stats` package. `glm` is used to fit generalized linear models, specified by giving a symbolic description of the linear predictor and a description of the error distribution.
+
+A typical predictor has the form response ~ terms where response is the (numeric) response vector and terms is a series of terms which specifies a linear predictor for response. For binomial families like ours, the response can also be specified as a factor (when the first level denotes "bad" and all others "good"). A terms specification of the form $first + second$ indicates all the terms in first together with all the terms in second with any duplicates removed. In the data, the variable V1 and V2 represent this construct, while the response is a character variable type labeled "Class" or "Y", as re redefined it.
+
+The `summary` function can be used to obtain or print a summary of the results and the  `anova` function to produce an analysis of variance table. We ran several models but only kept the results of the model we labeled `model_lm`. V3, V5, V8, V22 and V26 represent various radar returns, classified as either "good" (1) or "bad" (0). The Coefficient table provides the estimate, its standard error, z-values, and the associated p-value.
+
+The **standard deviation** of an estimate is called the **standard error**. The standard error of the coefficient measures how precisely the model estimates the coefficient's unknown value. The standard error of the coefficient is always positive. We use the standard error of the coefficient to measure the precision of the estimate of the coefficient. The smaller the standard error, the more precise the estimate. For our model, all the standard errors are about the same, so the model was able to estimate all the coefficients with equal precision. Also, the standard errors are relatively small.
+
+Notice that the **Residual deviance** is smaller than the **Null deviance**, which is what we want. The null deviance tells us how well the response variable can be predicted by a model with only an intercept term. The residual deviance tells us how well the response variable can be predicted by a model with p predictor variables. The lower the value, the better the model is able to predict the value of the response variable.
+
+To determine if a model is “useful” we can compute the Chi-Square statistic as:
+
+$\chi^{2} = \text{Null deviance} – \text{Residual deviance}$
+
+with $p$ degrees of freedom.
+
+The p-values in the table are z-value sand are different that Chi-square values ( the come from different distributions). We can find the $p$-value associated with this Chi-Square statistic. The lower the $p$-value, the better the model is able to fit the dataset compared to a model with just an intercept term.
+
+```{r}
+model_lm = glm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_trn, family = binomial)
+summary(model_lm)
+print(paste("Chi-Square =", model_lm$null.deviance/model_lm$deviance))
+```
+
+### ANOVA Table
+The ANOVA table for our model displays the model and its Deviance Residuals plus its Residuals Deviance
+
+Deviance residual is another type of residual measures. It measures the disagreement between the maxima of the observed and the fitted log likelihood functions. Since logistic regression uses the maximal likelihood principle, the goal in logistic regression is to minimize the sum of the deviance residuals.
+
+Residual Deviance is the same as Null Deviance. Standard ‘raw’ residuals aren’t used in GLM modeling because they don’t always make sense. But for the sake of completeness, they are calculated and appear as the model object `model_lm$residuals`. A better alternative would be Pearson residuals. These also come in a standardized variant, useful to ensure the residuals have a constant variance.
+
+```{r}
+anova(model_lm)
+```
+
+### Ploting Residuals
+Here, well plot the Deviance Residuals and the Pearson residuals. Interestingly, thee Diviance residuals have a pattern not present in the plots of the other classes of residuals. There is a ‘hump’ around 0.5 and another around 1.5. If we doing this analysis for real, that should prompt an investigation. The Pearson residual present the same result but with a different scale.
+
+```{r}
+plot(density(resid(model_lm, type='deviance')))
+lines(density(resid(model_lm, type='deviance')), col='red')
+
+plot(density(rstandard(model_lm, type='pearson')))
+lines(density(rstandard(model_lm, type='pearson')), col='red')
+```
+
+### Potting the Model
+There are four plots that the model provides information for, where we only have to have `R` perform a simple plot. The plots are: Residuals vs. Fitted plot, A Normal Q-Q plot, a  plot, and a Residuals vs. Leverage plot.
+
+When looking at this plot, we check for two things:
+
+1. Verify that the red line is roughly horizontal across the plot. If it is, then the assumption of homoscedasticity is likely satisfied for a given regression model. That is, the spread of the residuals is roughly equal at all fitted values.
+
+2. Verify that there is no clear pattern among the residuals. In other words, the residuals should be randomly scattered around the red line with roughly equal variability at all fitted values.
+
+#### Residuals vs. Fitted
+This plot is a scatter plot of residuals on the $y$-axis and fitted values (estimated responses) on the $x$-axis. The plot is used to detect non-linearity, unequal error variances, and outliers. The plot suggests that there is a decreasing relationship between our modeled responses and its residuals, but the relationaship may not be linear. It also shows a data point (`#129`) that is nearly off the chart. We'll look at that point later in the discussion.
+
+#### Normal Q-Q
+A Normal Q-Q plot helps us assess whether a set of data plausibly came from some theoretical Normal distribution. It is a scatterplot created by plotting two sets of quantiles against one another. If both sets of quantiles came from the same distribution, we should see the points forming a line that’s roughly straight. 
+
+#### Scale vs. Location
+A scale-location plot is a type of plot that displays the fitted values of a regression model along the x-axis and the the square root of the standardized residuals along the y-axis.
+
+#### Residuals vs. Leverage
+Each observation from the dataset is shown as a single point within the plot. The x-axis shows the leverage of each point and the y-axis shows the standardized residual of each point.
+
+Leverage refers to the extent to which the coefficients in the regression model would change if a particular observation was removed from the dataset. Observations with high leverage have a strong influence on the coefficients in the regression model. If we remove these observations, the coefficients of the model would change noticeably.
+
+If any point in this plot falls outside of Cook’s distance (the red dashed lines) then it is considered to be an influential observation. We can see that observation #129 lies closest to the border of Cook’s distance, but it doesn’t fall outside of the dashed line. This means there are not any influential points in our regression model.
+
+```{r}
+try(plot(model_lm));try(text(model_lm))
+```
+
+## Making Predictions
+Now that we have what appears to be a decent model, we use it to make predictions. There are two function available to complete this task: First, the `stats` package have a special `glm.predict()` functions. The second function, `predict()` from the `base` R package is simpler and the one we'll use. the `type = link` argument refers to the "logit" link-function used in the model (by default, the family binomial uses the logit link function). Our responses are "1"s and "zeros".
+
+The `pred` object that we create here will be used for model scoring and diagnostics, as we go forward.
+
+```{r}
+pred = ifelse(predict(model_lm, type = "link") > 0, "1", "0")
+```
+
+Going forward, we want to ensure that the actual values and the predicted values are the same type. We know that we'll need both sets to be character values for scoring and building a confusion matrix, so we transform the actuals here.
+
+```{r}
+ion_trn$Y_trn<-as.character(ion_trn$Y)
+ion_tst$Y_tst<-as.character(ion_tst$Y)
+```
+
+### Score the Trained Model
+We use the actual and predicted values for scoring the model by checking the percentage of predictions that match the actuals.
+
+```{r}
+score<-mean(pred==ion_trn$Y_trn)
+score
+```
+
+## Results
+Here, we'll generate several kinds of results, including the table representing the confusion matrix, a matrix of overall results, and a matrix of classes. Recall that the classes represent the responses described as free electrons in the ionosphere. "Good" radar returns are those showing evidence of some type of structure in the ionosphere.  "Bad" returns are those that do not; their signals pass through the ionosphere. 
+
+### Confusion Matrix
+
+To predict based on the actual training data requires that both the predicted values and the actual values are formatted as arrays. So, we make them arrays and check their structures to ensure they match.
+
+```{r}
+ion_trn$Y_trn<-as.array(ion_trn$Y_trn)
+pred<-as.array(pred)
+str(pred)
+str(ion_trn$Y_trn)
+```
+
+We use the `confusionMatrix()` function form the `caret` package to construct the confusion matrix. To make the code simpler, we use a helper function named `train_tab`, which forms a table of predicted and actual values (we'll use all of its output later), and we print a table of actuals and predictions.
+
+```{r}
+library(caret)
+
+train_tab = table(predicted = pred, actual = ion_trn$Y)
+train_con_mat = confusionMatrix(train_tab)
+results <- confusionMatrix(train_tab)
+print(table(predicted = pred,actuals = ion_trn$Y))
+```
+
+### The Confusion Matrix Results
+First, look at the confusion matrix. The table is organized so that the actuals are the columns and the predicted ar the rows. So, if we look at row 0 and column 0, we are viewing the frequency when the model predicted the actual number of "0"s correctly. These are called "true negatives" or TNs. If we shift to the right, while still in row 0, we see that there of 29 counts where the model predicted the "0"s class when they were actually "1"s. These are called 'false negatives" or FNs.
+
+Moving down to row 1 and column 1, guess what? These are the frequency of "true positives" or TPs, when the model predicted "1"s and the actuals were "1"s. So, shifting left to row 1 and column 0, we have the "false positives" or FPs, and these are cases when the model predicted "1"s while they were actually "0"s.
+
+To summarize, there are 125 TNs, 21 FNs, 53 TPs, and 12 FPs.
+
+```{r echo = FALSE, results = 'asis'}
+library(knitr)
+library(dplyr)
+library(tufte)
+rownames(train_tab) <- c("Bad", "Good")
+kable(train_tab[1:2, ], "pipe", col.names = (c("Bad", "Good")), caption = "Confusion Matrix")
+```
+
+### The Overall Results
+The confusion matrix object we created (above) provides a lot of model performance metrics. We'll get the matrix of overall results. The matrix of overall results will provide and accuracy score, which we'll explain later, with lower and upper bounds, to for a confidence interval. It also, gives us the p-value for the accuracy score. Accuracy is the ratio of the correctly labeled classes to the whole pool of classes, and may be the most intuitive measure. Accuracy answers the following question: How many "goods" did we correctly label out of all the classes?
+
+$Accuracy = \frac{(TP+TN)}{(TP+FP+FN+TN)}$
+
+* numerator: all correctly labeled classes (All goods)
+* denominator: all classes
+
+Finally, the overall results give us the p-value of the McNemar's Test, which we'll explain now, since it may be the most infomative result.
+
+In a widely cited 1998 paper on the use of statistical hypothesis tests to compare classifiers titled “Approximate Statistical Tests for Comparing Supervised Classification Learning Algorithms“, Thomas Dietterich recommends the use of the McNemar’s test.
+
+> "For algorithms that can be executed only once, McNemar’s test is the only test with acceptable Type I error."
+>
+> `r tufte::quote_footer('--- Thomas Dietterich')`
+
+Specifically, Dietterich’s study was concerned with the evaluation of different statistical hypothesis tests, some operating upon the results from resampling methods. The concern of the study was low Type I error, that is, the statistical test reporting an effect when in fact no effect was present (false positive).
+
+Statistical tests for deep learning models have always been an issue, and as well see that this si the case for multinomial logistic regression torward the end of this chapter. However, McNemar's test is favorably accepted. The test is based on contingency tables, which we will not discuss here. We will state that a contingency table is a tabulation or count of two categorical variables. In the case of the McNemar’s test, we are interested in binary variables correct/incorrect or yes/no for a control and a treatment or two cases. This is called a 2×2 contingency table, and is much like our confusion matrix.
+
+### The McNemar Test
+The McNemar test statistics is calculated from a contingency table as:
+
+$Statistic = \frac{(\text{Yes/No} - \text{No/Yes})^2}{\text{Yes/No} + \text{No/Yes}}$
+
+Where Yes/No is the count of test instances that Classifier1 got correct and Classifier2 got incorrect, and No/Yes is the count of test instances that Classifier1 got incorrect and Classifier2 got correct.
+
+This calculation of the test statistic assumes that each cell in the contingency table used in the calculation has a count of at least 25. The test statistic has a Chi-Squared distribution with 1 degree of freedom.
+
+We can see that only two elements of the contingency table are used, specifically that the Yes/Yes and No/No elements are not used in the calculation of the test statistic. As such, we can see that the statistic is reporting on the different correct or incorrect predictions between the two models, not the accuracy or error rates. This is important to understand when making claims about the finding of the statistic.
+
+The default assumption, or null hypothesis, of the test is that the two cases disagree to the same amount. If the null hypothesis is rejected, it suggests that there is evidence to suggest that the cases disagree in different ways, that the disagreements are skewed.
+
+Given the selection of a significance level, the p-value calculated by the test can be interpreted as follows:
+
+* $p > \alpha$: fail to reject $H_0$, no difference in the disagreement (e.g. treatment had no effect).
+* $p <= \alpha$: reject $H_0$, significant difference in the disagreement (e.g. treatment had an effect).
+
+### Interpreting the McNemar Test
+It is important to take a moment to clearly understand how to interpret the result of the test in the context of two machine learning classifier models.
+
+The two terms used in the calculation of the McNemar’s Test capture the errors made by both models. Specifically, the No/Yes and Yes/No cells in the contingency table. The test checks if there is a significant difference between the counts in these two cells. That is all.
+
+If these cells have counts that are similar, it shows us that both models make errors in much the same proportion, just on different instances of the test set. In this case, the result of the test would not be significant and the null hypothesis would not be rejected.
+
+> "Under the null hypothesis, the two algorithms should have the same error rate …"
+>
+> — Approximate Statistical Tests for Comparing Supervised Classification Learning Algorithm, 1998.
+
+If these cells have counts that are not similar, it shows that both models not only make different errors, but in fact have a different relative proportion of errors on the test set. In this case, the result of the test would be significant and we would reject the null hypothesis.
+
+> "So we may reject the null hypothesis in favor of the hypothesis that the two algorithms have different performance when trained on the particular training"
+>
+> — Approximate Statistical Tests for Comparing Supervised Classification Learning Algorithm, 1998.
+
+We can summarize this as follows:
+
+*   **Fail to Reject Null Hypothesis:** Classifiers have a similar proportion of errors on the test set.
+*   **Reject Null Hypothesis:** Classifiers have a different proportion of errors on the test set.
+
+After performing the test and finding a significant result, it may be useful to report an effect statistical measure in order to quantify the finding. For example, a natural choice would be to report the odds ratios, or the contingency table itself, although both of these assume a sophisticated reader.
+
+It may be useful to report the difference in error between the two classifiers on the test set. In this case, be careful with your claims as the significant test does not report on the difference in error between the models, only the relative difference in the proportion of error between the models.
+
+Finally, in using the McNemar’s test, Dietterich highlights two important limitations that must be considered. They are:
+
+1. There is no measure of the training set or model variability.
+2. It is a more indirect comparison of models, than the Train/Test Split method.
+
+```{r}
+as.matrix(results, what = "overall")
+```
+
+### The Classes Results
+
+Taking these in order, **Sensitivity** is the ratio of the correctly "+ve"good" labeled by our model to all classes that are "good" in reality.
+Sensitivity answers the following question: Of all the classes that are good, how many of those do we correctly predict?
+
+$Sensitivity = \frac{TP}{TP+FN}$
+
+* numerator: "good" labeled for "good" classes.
+* denominator: all classes that are "good" (whether detected by our model or not)
+
+
+**Specificity** is the correctly "goods" labeled by the model for all the "goods" in reality. Specifity answers the following question: Of all the "classes" who are "good", how many of those did we correctly predict?
+
+$Specificity = \frac{TN}{TN+FP}$
+
+* numerator: "bad" labeled for "bad" classes.
+* denominator: all classes that are "bad" in reality (whether labeled "bad" or "good")
+
+To better understand Sensitivity and Secificity, we'll use a receiver-operator curve or ROC.
+
+```{r}
+as.matrix(results, what = "classes")
+``` 
+
+### The Receiver Operating Characteristic Curve
+
+An important way to visualize sensitivity and specificity is via the receiving operator characteristic curve. Let’s see how we can generate this curve in R. The `pROC` package’s `roc()` function is nice in that it lets one plot confidence intervals for the curve.
+
+On the x-axis specificity decreases as the false positives increase. On the y-axis sensitivity increases with false positives. One interpretation of this is in terms of how much you ‘pay’ in terms of false positives to obtain true positives. The area under the curve summarizes this: if it is high you pay very little, while if it is low you pay a lot. The ‘ideal’ curve achieves sensitivity 1 for specificity 1, and has AUC 1. This implies you pay nothing in false positives for true positives. Our observed curve is pretty good though, as it has a high slope early on, and a high AUC of 0.804.
+
+```{r}
+library(pROC)
+
+N_ion_all = nrow(ion_trn)
+N_ion_trn = round(0.75*(N_ion_all))
+N_ion_tst = N_ion_all-N_ion_trn
+
+model02 = glm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_data, family = 'binomial')
+predictions <- predict(model02,newdata=ion_tst, type='response')[1:N_ion_tst]
+
+ion_sensitivity <- sensitivity(factor(round(predictions)),factor(ion_tst['Y'][1:N_ion_tst,]))
+ion_specificity <- specificity(factor(round(predictions)),factor(ion_tst['Y'][1:N_ion_tst,]))
+ion_roc <- roc(round(predictions),ion_tst['Y'][1:N_ion_tst,],ci=TRUE,plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE, print.auc=TRUE, show.thres=TRUE, col = "red", grid.col=c("red2", "red3"))
+ion.ci <- ci.se(ion_roc)
+plot(ion.ci,type='shape', col = "lightblue", lwd = 2)
+plot(ion.ci,type='bars', col = 'blue', lwd = 2)
+```
+
+
+```{r}
+library(pROC)
+roc.list <- roc(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_trn)
+
+
+ci.list <- lapply(roc.list, ci.se, specificities = seq(0, 1, l = 25))
+
+dat.ci.list <- lapply(ci.list, function(ciobj) 
+  data.frame(x = as.numeric(rownames(ciobj)),
+             lower = ciobj[, 1],
+             upper = ciobj[, 3]))
+
+p <- ggroc(roc.list) + theme_minimal() + geom_abline(slope=1, intercept = 1, linetype = "dashed", alpha=0.7, color = "grey", size = 1.5) + coord_equal() 
+
+for(i in 1:3) {
+  p <- p + geom_ribbon(
+    data = dat.ci.list[[i]],
+    aes(x = x, ymin = lower, ymax = upper),
+    fill = i + 1,
+    alpha = 0.2,
+    inherit.aes = F) 
+  } 
+
+p
+```
+
+Back to classes results.
+
+**Precision** is the positive predicted values divided by all the postive values:
+
+$Precision = \frac{TP}{TP+FP}$
+
+* numerator: All the actual "good" classes that were classified as "good".
+* Denominator: All the predicted "good" classes whether they were true or false.
+
+The **F1-score** considers both precision and recall. **Recall** is the same as sensitivity. It is the harmonic mean (average) of the precision and recall.
+The F1 Score is best if there is some sort of balance between precision $(p)$ and recall $(r)$ in the system. On the other hand, the F1 Score is low if one measure is improved at the expense of the other. For example, if $P=1$ and $R=0$, the F1 score is 0.
+
+$F1-Score = 2\cdot \frac{Recall \cdot Precision}{Recall + Precision}$
+
+**Balanced Accuracy"" is simply the arithmetic mean of Sensitivity and Specificity:
+
+$\text{Balanced Accuracy} = \frac{Sensitivity+Specificity}{2}$
+
+Prevalence is the proportion of individuals with disease, or the proportion of nodes with individuals with disease, or the proportion of individuals with disease in each node. I'm a rocket scientist, not  medical doctor, but to me this means the proportion or classes that are rated as "bad" and really as "bad". So, it provides a percentage of the data that yield "bad" as a class. And, this takes us to some general rules of thumb.
+
+### Rules of Thumb
+Accuracy is a great measure but only when you have symmetric data (false negatives & false positives counts are close), and if false negatives and false positives have similar costs. If the cost of false positives and false negatives are different then F1 is your savior. **F1 is best if you have an uneven class distribution**.
+
+Precision is how sure you are of your true positives, while recall is how sure you are that you are not missing any positives.
+
+Choose **Sensitivity** if the idea of false positives is far better than false negatives. In other words, if the occurrence of false negatives is so unacceptable/intolerable, that you’d rather get some extra false positives (false alarms) over saving some false negatives. For example, you would rather get some healthy people labeled diabetic over leaving a diabetic person labeled healthy.
+
+Choose **Precision** if you want to be more confident of your true positives. For example, you woul rather have some spam emails in your inbox rather than some regular emails in your spam box. So, the Outlook wants to be extra sure that email $X$ is spam before it is sent to your spam box and you never get to see it.
+
+Choose **Specificity** if you want to cover all true negatives, meaning you don’t want any false alarms or you don’t want any false positives. For example, if you’re running a drug test in which all people who test positive will immediately go to jail, you don’t want anyone drug-free going to jail. False positives here are intolerable.
+
+### Table of Results Plot
+This is a pretty rudimentary plot but is does give an idea of proportions of TPs, FPs, TNs, and FNs. The top left box represents TNs and the bottom right represents TPs. FPs are under the TNs and FNs are above the TPs. We'll make our visual better by creating a heatmap in the next section.
+
+```{r}
+plot(as.table(results))
+```
+
+## Heatmap of the Confusion Matrix
+
+### Define Element of the Confusion Matrix
+First, we create a dataframe called `data` comprised of the Actuals and Predicted Classes, two columns of ("0","1")s. We also rename the column headings, using "Actual" and "Predicted".
+
+Second, we form a dataframe named `actual` and populate it with a table of the Actuals from `data`. hat is, we compute the frequencies using `data$Actual`. Then, we rename the column headings: "Actual" and "ActualFreq". 
+
+Third, we generate another dataframe named `confusion` comprised of a table of  `data$Actual` and `data$Predicted`. Since "Actual" and "Predicted" were already columns of `data`, the predited frequencies will become the third column. And, we rename the columns: "Actual", "Predicted", and "Freq".
+
+Finally, we merge the `confusion` dataframe and the `actual` dataframe, sorted by "Actual". This gives us a dataframe populated with actuals, predicted, predicted frequencies and actual frequencies ("Actual", "Predicted", "Freq", "ActualFreq"). Since we want the heatmap to show percentages rather than counts, we divied the actual fequencies, "Freq", by the total "ActualFreq", giving us a fifth column of precentages, called "Percent"
+
+```{r}
+data = data.frame(cbind(ion_trn$Y_trn, pred))
+names(data) = c("Actual", "Predicted")
+
+#compute frequency of actual categories
+actual = as.data.frame(table(data$Actual))
+names(actual) = c("Actual","ActualFreq")
+
+#build confusion matrix
+confusion = as.data.frame(table(data$Actual, data$Predicted))
+names(confusion) = c("Actual","Predicted","Freq")
+
+#calculate percentage of test cases based on actual frequency
+confusion = merge(confusion, actual, by="Actual")
+confusion$Percent = confusion$Freq/confusion$ActualFreq*100
+```
+
+### Render The Heatmap Plot
+We'll create the plot using three different layers:
+* Layer 1: first we draw tiles and fill color based on percentage of test cases
+* Layer 2: We define the text that will fill the heatmap, including the values for the percentage of FP, TP, FN, and TN.
+* Layer 3: we draw diagonal tiles. We use alpha = 0 so as not to hide previous layers but use size=0.3 to highlight border
+* Then we render the plot
+
+```{r}
+# Layer 1
+tile <- ggplot() +  theme(text = element_text(size=16)) +
+  geom_tile(aes(x=Predicted, y=Actual, fill=Percent),data=confusion, color="black",size=0.1) +
+  labs(x="Predicted",y="Actual")
+# Layer 2
+tile = tile + 
+  geom_text(aes(x=Predicted,y=Actual, label=sprintf("%.1f", Percent)),data=confusion, size=5, colour="black") +
+  scale_fill_gradient(low="grey",high="red")
+# Layer 3
+tile = tile + 
+  geom_tile(aes(x=Predicted,y=Actual), data=subset(confusion, as.character(Predicted)==as.character(Actual)), color="blue", size=1, fill="black", alpha=0) 
+# Render
+tile
+```
+
+## References
+
+1. Sigillito, V., Wing, S., Hutton, L. & Baker, K.. (1988). Ionosphere. UCI Machine Learning Repository.
+
+Y ~ V3 + V5 + V8 + V22 + V26, data = ion_data
+
+```{r}
+summary(ols <- lm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_data))
+
+opar <- par(mfrow = c(2,2), oma = c(0, 0, 1.1, 0))
+plot(ols, las = 1)
+par(opar)
+```
+
+
+```{r}
+ion_data[c(88, 197, 229, 189), 1:2]
+```
+
+
+```{r}
+d1 <- cooks.distance(ols)
+r <- stdres(ols)
+a <- cbind(ion_data, d1, r)
+a[d1 > 3/87, ]
+```
+
+
+```{r}
+rabs <- abs(r)
+a <- cbind(ion_data, d1, r, rabs)
+asorted <- a[order(-rabs), ]
+asorted[1:10, ]
+```
+
+
+```{r}
+summary(rr.huber <- rlm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_data))
+```
+
+
+```{r}
+hweights <- data.frame(Y = ion_data$Y, resid = rr.huber$resid, weight = rr.huber$w)
+hweights2 <- hweights[order(rr.huber$w), ]
+hweights2[1:15, ]
+```
+
+
+```{r}
+rr.bisquare <- rlm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_data, psi = psi.bisquare)
+summary(rr.bisquare)
+```
+
+
+```{r}
+biweights <- data.frame(Y = ion_data$Y, resid = rr.bisquare$resid, weight = rr.bisquare$w)
+biweights2 <- biweights[order(rr.bisquare$w), ]
+biweights2[1:15, ]
+```
+
+
+
+```{r}
+set.seed(1234)
+summary(model_lm <-lm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_trn))
+```
+
+
+```{r}
+set.seed(1234)
+model_glm = glm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_trn, family = gaussian)
+summary(model_glm)
+```
+
+
+```{r}
+set.seed(1234)
+summary(model_rlm <- rlm(Y ~ V3 + V5 + V8 + V22 + V26, data = ion_trn, psi = psi.huber))
+```
+
+
+```{r}
+set.seed(1234)
+library(robustbase)
+model_lm  <-  lm(Y ~ V4 + V5 + V6 + V6 + V8 + V9 + V10 + V12 + V22 + V24 + V27 + V29, data = ion_trn)
+model_glm <- glm(Y ~ V4 + V5 + V6 + V6 + V8 + V9 + V10 + V12 + V22 + V24 + V27 + V29, data = ion_trn, family = 'gaussian')
+model_rlm <- rlm(Y ~ V4 + V5 + V6 + V6 + V8 + V9 + V10 + V12 + V22 + V24 + V27 + V29, data = ion_trn, psi = psi.huber)
+#model_rlm<-lmrob(Y ~ V4 + V5 + V6 + V6 + V8 + V9 + V10 + V12 + V22 + V24 + V27 + V29, data = ion_trn)
+```
+
+
+```{r}
+#LM
+LM_Train_SSE <- sum((predict(model_lm) - ion_trn$Y )^2)/2
+
+Test_LM_Output <- predict(model_lm, newdata = ion_tst)
+LM_Test_SSE <- sum((Test_LM_Output - ion_tst$Y)^2)/2
+paste("LM  Train SSE: ", round(LM_Train_SSE, 4))
+paste("LM  Test SSE :  ", round(LM_Test_SSE, 4))
+
+#GLM
+GLM_Train_SSE <- sum((predict(model_glm) - ion_trn$Y)^2)/2
+
+Test_GLM_Output <- predict(model_glm,newdata = ion_tst)
+GLM_Test_SSE <- sum((Test_GLM_Output - ion_tst$Y)^2)/2
+paste("GLM Train SSE: ", round(GLM_Train_SSE, 4))
+paste("GLM Test SSE :  ", round(GLM_Test_SSE, 4))
+
+#RLM
+RLM_Train_SSE <- sum((predict(model_rlm) -ion_trn$Y)^2)/2
+
+Test_RLM_Output <- predict(model_rlm, newdata = ion_tst)
+RLM_Test_SSE <- sum((Test_RLM_Output - ion_tst$Y)^2)/2
+paste("RLM Train SSE: ", round(RLM_Train_SSE, 4))
+paste("RLM Test SSE :  ", round(RLM_Test_SSE, 4))
+```
+
+
+```{r}
+LM_Diff  <- abs(LM_Train_SSE - LM_Test_SSE)
+GLM_Diff <- abs(GLM_Train_SSE - GLM_Test_SSE)
+RLM_Diff <- abs(RLM_Train_SSE - RLM_Test_SSE)
+
+# Bar plot of results
+Regression_Errors <- tibble(Network = 
+          rep(c("LM", "GLM", "RLM"), each = 3), 
+          DataSet = rep(c("ion_trn","ion_tst","diff"),time= 3), 
+                  SSE = c(LM_Train_SSE, LM_Test_SSE, LM_Diff,
+                        GLM_Train_SSE, GLM_Test_SSE, GLM_Diff,
+                        RLM_Train_SSE, RLM_Test_SSE, RLM_Diff))
+
+library(ggplot2)
+
+#setwd("C:/Users/jeff/Documents/R")
+p5 <- Regression_Errors %>% 
+  ggplot(aes(Network, SSE, fill = DataSet)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Regression Models SSE")
+p5
+
+```
+
+```{r}
+print(paste("LM:",LM_Diff, "GLM:", GLM_Diff, "RLM:",RLM_Diff))
+```

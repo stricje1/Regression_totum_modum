@@ -1,0 +1,552 @@
+---
+title: "Multiple Linear Regression"
+author: "Jeffrey Strickland"
+date: "2022-12-11"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5, dpi = 300)
+```
+
+### Load Required R Packages.
+
+First we load the R packages that we anticipate needing. We may find that we need additional packages later.
+
+```{r}
+#install.packages("rsq").
+library(rsq)
+library(ggplot2)
+library(hrbrthemes)
+```
+
+### Import the Data
+
+Next, we’ll load the comma delimited data using the read.csv function and print the first 6 rows, including the headings.
+
+```{r}
+train <-read.csv("C:\\Users\\jeff\\Documents\\Data\\Survive.csv")
+head(train,6) 
+```
+
+In the dataset, we see characteristics of the RSOs (Weight, Visibility, etc.), characteristics of their orbits (Height, Type, etc.), and a survivability score. We want to predict survivability based on these “features”.
+
+### Fill Missing Values
+
+Now, let’s impute missing values (i.e., fill missing spaces) with “NA”.
+
+```{r}
+train[train==""] <- NA #Filling blank values with NA.
+names(train)
+```
+
+### Create Dataset with Numeric Features
+
+Next, let’s create two datasets, one with the numeric independent variables, X, and one with the dependent variable or response, Y. X will be comprised of columns 4, 6 and 8, or "RSO_Visibility", “RSO_MRP” and “Orbit_Establishment_Year”, respectively. Y is the response, “Survivability”. We'll also print the names of the variables in each set to confirm we have the right ones.
+
+```{r}
+X <- train[c(4,6,8)] 
+names((X))
+
+Y <- train[c(12)] #Storing the dependent variable.
+names((Y))
+```
+
+### Train-Test Split
+
+Here, we split the datasets, X and Y, into two sets each. The training datasets will be comprised of 70% of the data from each set, and the cross-validation sets will be comprised of the remaining 30%.
+
+```{r}
+set.seed(567) 
+part <- sample(2, nrow(X), replace = TRUE, prob = c(0.7, 0.3))
+X_train <- X[part == 1,]
+X_cv <- X[part == 2,]
+
+Y_train <- Y[part == 1,]
+Y_cv <- Y[part == 2,]
+```
+
+## Model 1: Lnear Model with Numeric Features
+
+We'll train model 1 using two of the numeric features, RSO_MRP and Orbit_Establishment_Year. We'll also exclude the intercept term by adding `+0` to the regression formula.
+
+```{r}
+model1 <- lm(Y_train ~ RSO_MRP + Orbit_Establishment_Year + 0, data = X_train ) 
+summary(model1)
+```
+
+### Extract Model 1 Equation
+
+Next, we use the R function `extract_eq` from the `equatiomatic` package, to extract the Model 1 equation.
+
+```{r}
+library(equatiomatic)
+equatiomatic::extract_eq(model1)
+```
+
+### Predict using Model 1
+
+Now, we use the model and the cross-validation set to make predictions.
+
+```{r}
+predict_1 <- predict(model1, X_cv) #Predicting the values.
+```
+
+### Calculate Model 1 Metrics
+
+Next, we calculate the Model 1 performance metrics, RMSE and R-squared.
+
+Now, let’s calculate MSE, based on the model prediction, and R-squared based on the model. MSE or Mean Square Error, R^2 is a metric that determines how much of the total variation in Y (dependent variable) is explained by the variation in X (independent variable). Mathematically, it can be written as:
+
+$$R^2=1-(\frac{\sum(Y_Actual-Y_Predicted )^2)}{(\sum(Y_Actual-Y_Mean )^2 )}$$
+
+The value of $R^2$ is always between 0 and 1, where 0 means that the model does not explain any variability in the response variable and 1 meaning it explains full variability in the response variable.
+
+**Root Mean Square Error:8* In `R`, the root mean square error (RMSE) allows us to measure how far predicted values are from observed values in a regression analysis.
+
+In other words, how concentrated the data around the line of best fit.
+
+$$RMSE=\sqrt{\frac{\sum(P_i–O_i )^2}{n}}$$
+
+where:
+$\sigma$ symbol indicates “sum”
+
+$P_i$ is the predicted value for the ith observation in the dataset
+
+$O_i$ is the observed value for the ith observation in the dataset
+
+$n$ is the sample size
+
+Now let’s calculate these model metrics.
+
+```{r}
+library(Metrics)
+RMSE <- rmse(Y_cv, predict_1)
+R.sq <- rsq(model1)
+print(paste("R-square =", R.sq))
+print(paste("RMSE =", RMSE))
+```
+
+We’ll use MSE for Model 1 for comparison with subsequent models. In this case, R² is 0.75, meaning, 75% of variance in survivability is explained by year of establishment and MRP. In other words, if you know year of establishment and the MRP, you’ll have 75% of the information to make an accurate prediction about survivability. 
+
+### Plot Model 1 Coefficients
+
+Finally, we plot the Model 1 coefficient values using a barplot. Let's look at the coefficients of this linear regression model. Since RSO_MRP has a high coefficient, having higher RSO MRP scores contributes to higher survivability.
+
+```{r}
+par(mar=c(11,4,2,1))
+barplot(model1$coefficients, main = "Model 1 Coefficients", 
+        ylab = "Coefficients", las = 2, col = 'skyblue')
+```
+
+## Model 2: Lnear Model with Numeric Features
+
+We'll train model 1 using two of the numeric features, RSO_MRP and Orbit_Establishment_Year as before with the intercept excluded, but we add `RSO_Visibility`. 
+
+```{r}
+model2 <- lm(Y_train ~ RSO_MRP + Orbit_Establishment_Year + RSO_Visibility + 0, data = X_train ) 
+summary(model1)
+```
+
+The model summary shows that all three features are significant as predictors, so let’s get some predictions and check the MSE.
+
+### Extract Model 2 Equation
+
+Next, we use the R function extract_eq from the equatiomatic package, to extract the Model 2 equation.
+
+```{r}
+library(equatiomatic)
+equatiomatic::extract_eq(model2)
+```
+
+### Predict using Model 2
+
+Now, we use the model and the cross-validation set to make predictions.
+
+```{r}
+predict_2 <- predict(model2, X_cv) #Predicting the values.
+```
+
+### Calculate Model 2 Metrics
+
+Next, we calculate the Model 2 performance metrics, RMSE and R-squared.
+
+```{r}
+library(Metrics)
+RMSE <- rmse(Y_cv, predict_2)
+R.sq <- rsq(model2)
+print(paste("R-square =", R.sq))
+print(paste("RMSE =", RMSE))
+```
+
+Model 2 Performance
+The RMSE of 1320.721 did not change very much but is slightly larger than 1320.481 from Model 1. Model 2 introduces slightly more error. $R^2$ is 0.75 and about the same as Model 1’s. Moreover, we have learned from the residuals vs. fitted value plots that the error variance is increasing implying that the regression model is not a good one. So, back to the drawing board.
+
+### Plot Model 2 Coefficients
+
+Finally, we plot the Model 2 coefficient values using a barplot.
+
+```{r}
+par(mar=c(11,4,2,1))
+barplot(model2$coefficients, main = "Model 1 Coefficients", 
+        ylab = "Coefficients", las = 2, col = 'skyblue')
+```
+
+Figure 3 1. Bar plot for Model 2 coefficients
+
+### Model 2 Residual Analysis
+
+Recall that residuals are differences between the one-step-predicted output from the model and the measured output from the validation data set. Thus, residuals represent the portion of the validation data not explained by the model.
+
+Residual Plots
+
+Residual analysis plots show different information depending on whether you use time-domain or frequency-domain input-output validation data. For frequency-domain validation data, the plot shows the following two axes:
+
+1.	Estimated power spectrum of the residuals for each output
+2.	Transfer-function amplitude from the input to the residuals for each input-output pair
+
+For time-domain validation data, the plot shows the following two axes:
+
+1.	Autocorrelation function of the residuals for each output
+2.	Cross-correlation between the input and the residuals for each input-output pair
+
+For linear models, you can estimate a model using time-domain data, and then validate the model using frequency domain data.
+Displaying the Confidence Interval
+The confidence interval corresponds to the range of residual values with a specific probability of being statistically insignificant for the system.
+
+```{r}
+plot(model2, col = "skyblue")
+```
+
+The first residual plot looks like a funnel shape. This shape indicates heteroskedasticity. The presence of non-constant variance in the error terms results in heteroskedasticity. We can clearly see that the variance of error terms(residuals) is not constant. Generally, non-constant variance arises in presence of outliers or extreme leverage values. These values get too much weight, thereby disproportionately influencing the model’s performance. When this phenomenon occurs, the confidence interval for out of sample prediction tends to be unrealistically wide or narrow.
+We can easily check this by looking at residual vs fitted values plot. If heteroskedasticity exists, the plot would exhibit a funnel shape pattern as shown above. This indicates signs of non-linearity in the data which has not been captured by the model.
+Also in the first plot, we see three outliers: data points, 79, 96, and 155. Typically, we would remove these points from the dataset, but given the amount of data we have, they do not have a great impact on the model’s fit.
+The second plot is the Normal Q-Q plot. The concern here is curvature of the data. If the model were a good fit, the data would be more linear.
+The third plot shows the standardized residuals and does not provide any additional value to those shown in the first plot.
+The fourth plot shows Cook’s Distance. Cook’s Distance is an estimate of the influence of a data point. It considers both the leverage and residual of each observation. Cook’s Distance is a summary of how much a regression model changes when the i^th observation is removed.
+
+### Import the Data
+
+```{r}
+train <-read.csv("C:\\Users\\jeff\\Documents\\Data\\Survive.csv")
+summary(train)
+```
+
+### Select Features
+
+For Model 3, we select most of the features, categorical and numeric, for the dataset X.
+
+```{r}
+X <- train[c(2,3,4,5,6,8,9,10,11)]
+names(X)
+```
+
+### Fill Missing Feature Values
+
+Next, we fill missing feature values using means for means for numeric fields and the lowest categories (most common) for categorical features.
+
+```{r}
+X$RSO_Weight[is.na(X$RSO_Weight)] <- mean(X$RSO_Weight, na.rm = TRUE)
+X$RSO_Density[is.na(X$RSO_Density)] <- "Low"
+X$RSO_Visibility[X$RSO_Visibility == 0] <- mean(X$RSO_Visibility)
+X$RSO_MRP[is.na(X$RSO_MRP)] <- mean(X$RSO_MRP, na.rm = TRUE)
+X$Orbit_Establishment_Year=2013 - X$Orbit_Establishment_Year
+X$Orbit_Height[is.na(X$Orbit_Height)] <- "LEO"
+X$Stealth_Type[is.na(X$Stealth_Type)] <- "Stealth_1"
+X$RSO_Type[is.na(X$RSO_Type)] <- "RSO_Type1"
+```
+
+### Create Response Set
+
+We also create the response set Y (survivability) and fill missing values with the mean value.
+
+```{r}
+Y <- train[c(12)]
+Y$Survivability[is.na(Y$Survivability)] <- mean(Y$Survivability, na.rm = TRUE) 
+names((Y))
+```
+
+### Train-Test Split
+
+Next, we split X and Y into training and cross-validation sets. 
+
+```{r}
+set.seed(567)
+part <- sample(2, nrow(X), replace = TRUE, prob = c(0.7, 0.3))
+X_train <- X[part == 1,]
+X_cv <- X[part == 2,]
+
+Y_train <- Y[part == 1,]
+Y_cv <- Y[part == 2,]
+```
+
+## Model 3: Mixed Feature Types
+
+For Model 3, we add the categorical values, and the model we build has mixed feature types.
+
+```{r}
+model3 <- lm(Y_train ~ RSO_MRP + Orbit_Height + RSO_Visibility + Orbit_Establishment_Year + Stealth_Type + 0, 
+             data = X_train )
+summary(model3)
+```
+
+### Extract Model 3 Equation
+
+Next, we use the R function extract_eq from the equatiomatic package, to extract the Model 3 equation. The equatiomatic package provides the function for expressing the regression model in it mathematical format.
+
+```{r}
+equatiomatic::extract_eq(model3)
+```
+
+### Use Model 3 to Predict
+
+Now, we use the model and the cross-validation set to make predictions.
+
+```{r}
+predict_3 <- predict(model3, X_cv)
+```
+
+### Model 3 Metrics
+
+Next, we calculate the Model 3 performance metrics, RMSE and R-squared.
+
+```{r}
+RMSE <- rmse(Y_cv, predict_3)
+R.sq <- rsq(model3)
+print(paste("R-square =", R.sq))
+print(paste("RMSE =", RMSE))
+```
+
+# Plot Model 3 Coefficients
+
+Finally, we plot the Model 3 coefficient values using a barplot.
+
+```{r}
+par(mar=c(11,4,2,1))
+barplot(model3$coefficients, main = "Model 2 Coefficients", 
+        ylab = "Coefficients", las = 2, col = 'blueviolet')
+```
+Figure 3-24. Bar plot of the model’s coefficient values.
+
+### Model 3 Residual Analysis
+
+Recall that residuals are differences between the one-step-predicted output from the model and the measured output from the validation data set. Thus, residuals represent the portion of the validation data not explained by the model.
+
+### Model 3 Residual Plots
+
+Residual analysis plots show different information depending on whether you use time-domain or frequency-domain input-output validation data. For linear models, you can estimate a model using time-domain data, and then validate the model using frequency domain data.
+Displaying the Confidence Interval
+
+The confidence interval corresponds to the range of residual values with a specific probability of being statistically insignificant for the system.
+
+```{r}
+plot(model3, col = "green2")
+```
+Figure 3-9. Plot of the residuals vs fitted values, with outliers at 79, 96, 155.
+
+Figure 3-10. Normality plot showing a lack of fit in the upper quantiles, with outliers at 79, 96, 155.
+
+Figure 3-11. Scale-location chart with standardized residuals, with outliers at 79, 96, 155.
+
+Figure 3-12. Plot of standardized residuals vs model leverage, with outliers at 69, 295, 2242.
+
+The first residual plot looks like a funnel shape. This shape indicates heteroskedasticity. The presence of non-constant variance in the error terms results in heteroskedasticity. We can clearly see that the variance of error terms(residuals) is not constant. Generally, non-constant variance arises in presence of outliers or extreme leverage values. These values get too much weight, thereby disproportionately influencing the model’s performance. When this phenomenon occurs, the confidence interval for out of sample prediction tends to be unrealistically wide or narrow.
+
+We can easily check this by looking at residual vs fitted values plot. If heteroskedasticity exists, the plot would exhibit a funnel shape pattern as shown above. This indicates signs of non-linearity in the data which has not been captured by the model.
+
+Also in the first plot, we see three outliers: data points, 79, 96, and 155. Typically, we would remove these points from the dataset, but given the amount of data we have, they do not have a great impact on the model’s fit.
+The second plot is the Normal Q-Q plot. The concern here is curvature of the data. If the model were a good fit, the data would be more linear.
+
+The third plot shows the standardized residuals and does not provide any additional value to those shown in the first plot.
+The fourth plot shows Cook’s Distance. Cook’s Distance is an estimate of the influence of a data point. It considers both the leverage and residual of each observation. Cook’s Distance is a summary of how much a regression model changes when the i^th observation is removed.
+
+### How to Interpret a Residual Plot
+
+When the non-linearity does not exist, we generally follow this process for interpreting residuals:
+
+Step 1: Locate the residual = 0 line in the residual plot.
+
+Step 2: Look at the points in the plot and answer the following questions:
+
+Are they scattered randomly around the residual = 0 line? Or are they clustered in a curved pattern, such as a U-shaped pattern?
+
+If the points show no pattern, that is, the points are randomly dispersed, we can conclude that a linear model is an appropriate model. In other words, if the residuals are randomly scattered around the residual = 0, it means that a linear model approximates the data points well without favoring certain inputs.
+
+If the points show a curved pattern, such as a U-shaped pattern, we can conclude that a linear model is not appropriate and that a non-linear model might fit better.
+
+### Error variance Analysis
+
+Residuals plot that has an increasing trend suggests that the error variance increases with the independent variable (see Figure 1); while a distribution that reveals a decreasing trend indicates that the error variance decreases with the independent variable. Neither of these distributions are constant variance patterns. The foregoing is also true when we have drifting in the error variance, as demonstrated in Figure 2. Therefore, they indicate that the assumption of constant variance is not likely to be true and the regression is not a good one. On the other hand, a horizontal-band pattern suggests that the variance of the residuals is constant.
+
+### Increasing Error Variance
+
+The generate the figure below, we simulated some basic data that would be demonstrate an increasing error variance.
+
+```{r}
+set.seed(77)
+n <- 300
+res_order <- seq(1, 3, length.out = n)
+g <- sample(c("m", "f"), size = n, replace = TRUE)
+msd <- ifelse(g=="m", 2*2.5, 2) * exp(1.5*res_order)/10
+residuals <- (1.2 + 2.1*res_order - 1.5*(g == "m") + 
+2.8*res_order*(g == "m") + rnorm(n, sd = msd))/10
+d <- data.frame(residuals, res_order, g)
+ggplot(d, aes(res_order, residuals)) + 
+geom_point(size = 2, col = 4) + 
+ggtitle("Residual that show Increasing Variance")
+```
+
+
+To generate the figure below, we simulated some basic data that would demonstrate drifting error variance.
+
+### Conclusions from Residual Analysis
+
+The plots reveal several issues. One concern is introduction of outliers at data points 79, 96, and 155, which has the effect of squeezing the data toward the horizontal axis. This makes it difficult to analyze the residuals, precisely. To correct this, we would normally remove the data outlier and repeat the modeling and analysis. However, in the next section, we are going to try a different modeling type. Another concern is the apparent, increasing error variance.
+The fourth plots show Cook’s Distance. Cook’s Distance is an estimate of the influence of a data point. It considers both the leverage and residual of each observation. Cook’s Distance is a summary of how much a regression model changes when the i^th observation is removed.
+
+### Scatterplots
+
+Before we delve into another model, let’s look at some more plots that may be useful for our analysis. The first plot we generate is for RSO Weight vs. Survivability, which is categorized by RSO Name.
+
+```{r}
+ggplot(X_train, aes(x = RSO_Visibility, y = Y_train, color = RSO_Name)) + 
+    geom_point(size = 2) +
+    theme_ipsum() +
+  labs(subtitle = "RSO Weight Vs Survivability", 
+       y = "Survivability", 
+       x = "RSO Weight", 
+       title = "Scatterplot")
+```
+Figure 3-13. Resident space object weight vs survivability.
+
+```{r}
+library(ggplot2)
+gg <- ggplot(X_train, aes(x = RSO_Weight, y = Y_train, 
+col = Stealth_Type)) + 
+  geom_point(size = 2) + 
+  theme_ipsum() +
+  labs(subtitle = "RSO Weight Vs Survivability", 
+       y = "Survivability", 
+       x = "RSO Weight", 
+       title = "Scatterplot")
+gg
+```
+Figure 3-14.  Resident space object stealth type vs survivability.
+
+we could expect, it appears the more advanced the stealth technology is, the more survivable is the RSO. However, note that are a few exceptions.
+Now, we generate a scatterplot using RSO Weight vs. Survivability, but this time we categorize it by RSO Density.
+
+```{r}
+gg <- ggplot(X_train, aes(x = RSO_Weight, y = Y_train)) + 
+  geom_point(aes(col = RSO_Density)) 
+gg
+```
+Figure 3-15. Resident space object weight vs survivability by density.
+
+The plot adds validity to the model outcomes, since RSO Density was not a significant feature in the model. So, now let’s look at RSO MRP vs. Survivability. Herre, we categorize the data by Stealth Type.
+
+```{r}
+gg <- ggplot(X_train, aes(x = RSO_MRP, y = Y_train)) + 
+  geom_point(aes(col = Stealth_Type)) 
+gg
+```
+Figure 3-16. Resident space object MRO vs survivability by stealth type.
+
+Although it is difficult to see all the data points for each Stealth Type, there does seem to be a pattern of increasing survivability with increasing suitability.
+Now, let’s do the same analysis but categorized as RSO Density (recall that it is not significant in the model).
+
+```{r}
+gg <- ggplot(X_train, aes(x = RSO_MRP, y = Y_train)) + 
+  geom_point(aes(col = RSO_Density)) 
+gg
+```
+Figure 3-17. Resident space object MRP vs survivability by density.
+
+Again, there does seem to be a pattern of increasing survivability with increasing suitability, even though RSO Density was not a significant feature.
+Now, let’s look at Establishment Year vs. Survivability, categorized by Orbit Height.
+
+```{r}
+gg <- ggplot(X_train, aes(x = Orbit_Establishment_Year, 
+y = Y_train)) + 
+  geom_point(aes(col = Orbit_Height)) 
+gg
+```
+Figure 3-18. Resident space object orbit establishment year vs survivability by orbit height.
+
+The salmon-colored data points are missing values, so one thing we learned is that we should impute the missing values or remove them from the data. The plot seems to demonstrate that the longer the RSO has been established, it is less survivable. Note that the father to the left an RSO is in the plot, it’s been in orbit for less time than those on the right. Also, not that the data is skewed, i.e., not symmetric.
+
+Let’s do the same analysis but with Stealth Type as the category.
+
+```{r}
+gg <- ggplot(X_train, aes(x = Orbit_Establishment_Year, 
+y = Y_train)) + 
+  geom_point(aes(col = Stealth_Type)) 
+gg
+```
+Figure 3-19. Resident space object orbit establishment year vs survivability by stealth type
+
+The plot tells the same story for Orbit Establishment vs. Survivability. Note that Stealth Type 4 is a younger technology.
+
+Now let’s switch gears a bit and look at a different type of scatterplot, which is available in the car-package. This kind of scatterplot shows the information provided in previous plots but adds a few more diagnostics.
+
+First, we see a dashed line in the plot that represents the trend of the data and around it, in the shaded light blue areas, a confidence interval is added.
+Second, there is a solid blue liner fit line slightly above the trend curve.
+
+Finally, there are two box plots, one representing the survivability data and another representing the Established Year data. The bow plots clearly support the observation of skewness we made previously. We also see that a linear fit might not be the best one, although our observation is not conclusive.
+
+```{r}
+library(car)
+scatterplot(X$Orbit_Establishment_Year, Y$Survivability)
+```
+Figure 3-20. Resident space object orbit establishment year vs survivability.
+
+The next scatterplot is for RSO MRP vs. Survivability. The plot supplies the same information as we saw previously but adds more. In this instance we can see that underlying trend is linear, but increasing, as well as the confidence interval. The boxplots show skewness in the data and point out the central tendency. This plot also implies that the linear regression model may not be the best modelling option.
+
+```{r}
+scatterplot(X$RSO_MRP, Y$Survivability)
+```
+Figure 3-21. Resident space object MRP vs survivability
+
+Finally, we look at RSO Weight vs. Survivability again. The plot does not add much information, except that the fit may be curvilinear, implying again that linear regression may not lead to the best fit.
+
+```{r}
+scatterplot(X$RSO_Weight, Y$Survivability)
+```
+Figure 3-22. Resident space object weight vs survivability.
+
+### Holistic Scatterplot
+
+This final scatterplot is different from previous ones, in that we can see the data categorized by Stealth Type and observe the darker color blue tend line is curvilinear.
+
+```{r}
+gg <- ggplot(X_train, aes(x = RSO_Weight, y = Y_train)) + 
+  geom_point(aes(col = Stealth_Type)) + 
+  geom_smooth(method = "loess", se = F) + 
+  labs(subtitle = "RSO Weight Vs Survivability", 
+       y = "Survivability", 
+       x = "RSO Weight", 
+       title = "Scatterplot", 
+       caption = "Source: midwest")
+gg
+```
+Figure 3-23.  Resident space object weight vs survivability by stealth type.
+
+### Model 3 Evaluation
+
+Aside from our earlier performance metrics and the diagnostics we performed with our plots, we’ll now look at some numerical metrics. Recall the MSE from Model 2 is 1979562 and its R^2 value is 0.3322661. Model 3’s MSE is close to zero, which is a drastic improvement. Also, the R^2 of 1.0 shows that the model is essentially a perfect fit. But wait! Didn’t the plots reveal some potential issues? They did, and this is probably a model that over-fits the data!
+
+```{r}
+par(mar=c(11,4,2,1))
+barplot(model3$coefficients, main = "Model 3 Coefficients", 
+ylab = "Coefficients", las = 2, col = "aquamarine2")
+
+```
+Figure 3-24. Bar plot of the model’s coefficient values.
+
+### Bar Plot Observations
+
+We can see that magnitude of the coefficients for Orbit_Identifier OUT013, Orbit_Identifier OUT018, Orbit_IdentifierOUT027, Orbit_Identifier OUT045, Orbit_Identifier OUT049, Orbit_HeightGEO, Orbit_HeightMEO, Stealth_Type2, Stealth_Type3, and RSO_Type3, are much higher as compared to rest of the coefficients. Therefore, the survivability of an RSO would be more driven by these features or levels of features. This might indicate an over-fitted model and validates our prior observation.
+
+How can we reduce the magnitude of coefficients in our model to correct for over-fitting? For this purpose, we have different types of regression techniques, which use regularization to overcome this problem. So let us discuss them in the next chapter.
+
+

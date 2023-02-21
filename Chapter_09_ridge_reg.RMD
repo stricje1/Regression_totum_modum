@@ -1,0 +1,424 @@
+---
+title: "Ridge Regression"
+author: "Jeffrey Strickland"
+date: "2022-12-05"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load the Data
+
+```{r}
+library(glmnet)
+train <- read.csv("C:\\Users\\jeff\\Documents\\Data\\survive2.csv")
+```
+
+Standardize the Data
+
+```{r}
+train$RSO_Weight <- (train$RSO_Weight - mean(train$RSO_Weight))/sd(train$RSO_Weight)
+train$RSO_Density <- (train$RSO_Density - mean(train$RSO_Density))/sd(train$RSO_Density)
+train$RSO_Visibility <- (train$RSO_Visibility - mean(train$RSO_Visibility))/sd(train$RSO_Visibility)
+train$RSO_MRP <- (train$RSO_MRP - mean(train$RSO_MRP))/sd(train$RSO_MRP)
+train$Orbit_Establishment_Year <- (train$Orbit_Establishment_Year - mean(train$Orbit_Establishment_Year))/sd(train$Orbit_Establishment_Year)
+train$Orbit_Height <- (train$Orbit_Height - mean(train$Orbit_Height))/sd(train$Orbit_Height)
+train$Stealth_Type <- (train$Stealth_Type - mean(train$Stealth_Type))/sd(train$Stealth_Type)
+train$RSO_Type <- (train$RSO_Type - mean(train$RSO_Type))/sd(train$RSO_Type)
+train$Survivability <- (train$Survivability - mean(train$Survivability))/sd(train$Survivability)
+summary(train)
+```
+
+Set X and Y
+
+```{r}
+train <- train[c(-1)]
+Y <- train[c(9)]
+X <- model.matrix(Survivability ~., train)
+```
+
+Train - CV Split
+
+```{r}
+set.seed(567)
+
+part <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+X_train<- X[part == 1,]
+X_cv<- X[part == 2,]
+
+Y_train<- Y[part == 1,]
+Y_cv<- Y[part == 2,]
+```
+
+#  Linear Model
+
+```{r}
+lm_mod <- lm(Y_train~., data = as.data.frame(X_train))
+summary(lm_mod)
+
+pred_lm <- predict(lm_mod,as.data.frame(X_train))
+SSE <- sum((pred_lm - Y)^2)
+SSR <- sum((Y - sum(Y)/nrow(Y))^2)
+SST = SSR + SSE
+R_square <- SSR / SST
+Ridge_RMSE = sqrt(SSE/nrow(Y))
+print(paste("LM R-square =", R_square))
+print(paste("LM Regression RMSE =", Ridge_RMSE))
+```
+
+
+Define lambda
+
+```{r}
+lambda <- 10^seq(10, -2, length = 100)
+```
+
+# Model 1
+
+```{r}
+ridge_reg <- glmnet(X_train, Y_train, alpha = 0, lambda = lambda)
+plot(ridge_reg, lwd = 2)
+```
+
+Best Lambda Computation
+
+```{r}
+bestlam <- ridge_reg$lambda.min
+```
+
+Predict with Type = Coefficients
+
+```{r}
+ridge.pred <- predict(ridge_reg, lambda = bestlam, newx = X_cv)
+ridge_pred.coef <- predict(ridge_reg, type = "coefficients", s = bestlam)[1:10]
+print(paste("Variable: Intercept =", ridge_pred.coef[1]))
+print(paste("Variable:", names(train), "=",  ridge_pred.coef[2:10]))
+```
+
+Plot the Ridge Reg Model with default gamma
+
+```{r}
+plot(ridge_reg, lwd = 3)
+```
+
+
+```{r}
+ridge_reg.coef<-predict(ridge_reg, type = "coefficients", lambda = bestlam)[1:10]
+print(paste("Variable: Intercept =",ridge_reg.coef[1]))
+print(paste("Variable:", names(train),"=", ridge_reg.coef[2:10]))
+```
+
+
+```{r}
+par(mar=c(11,4,2,1))
+plotlabels <- c("intercept",names(train[1:8]))
+barplot(ridge_reg.coef[1:9], main="Model 2 Coefficients",ylab="Coefficients",las=2, cex=1, cex.lab=1, cex.main=1.25, cex.sub=1, cex.axis=1, las=2, col="green3", names = plotlabels)
+```
+
+
+5 Folf Crossvalidation
+
+```{r, results='hide'}
+cv.ridge_reg<-cv.glmnet(X_train, Y_train, alpha=0, nfolds=5, type.measure = "deviance", trace.it=1, relax=F)
+cv.ridge.pred <- predict(cv.ridge_reg, lambda = bestlam, newx = X_cv)
+cv.ridge_reg.coef <- predict(cv.ridge_reg,  lambda = bestlam, type = "coefficients")[1:9]
+```
+
+
+```{r}
+print(paste("Variable: Intercept =", cv.ridge_reg.coef[1]))
+print(paste("Variable:", names(train), "=", cv.ridge_reg.coef[2:9]))
+plot(cv.ridge_reg)
+```
+
+
+```{r, results='hide'}
+cv2.ridge_reg<-cv.glmnet(X_train, Y_train, alpha=0, nfolds=5, type.measure = "mse", trace.it=1, relax=FALSE)
+
+```
+
+
+```{r}
+cv2.ridge_reg.coef<-predict(cv2.ridge_reg, type = "coefficients", lambda = bestlam)[1:10]
+print(paste("Variable: Intercept =",cv2.ridge_reg.coef[1]))
+print(paste("Variable:", names(train),"=", cv.ridge_reg.coef[2:9]))
+par(mar=c(10,4,2,1))
+plotlabels <- c("Intercept",names(train[1:9]))
+barplot(cv2.ridge_reg.coef, main="Model 2 Coefficients",ylab="Coefficients",las=2, cex=.75, cex.lab=.75, cex.main=1.25, cex.sub=.75, cex.axis=.75, las=2, col="green3", names = plotlabels)
+```
+
+
+```{r, results='hide'}
+cv.ridge_reg<-cv.glmnet(X_train, Y_train, alpha=0, nfolds=5, type.measure = "mse", trace.it=1, relax=TRUE)
+
+cv.ridge.pred <- predict(cv.ridge_reg, lambda = bestlam, newx = X_cv)
+```
+
+
+```{r}
+cv.ridge_reg.coef<-predict(cv.ridge_reg, type = "coefficients", lambda = bestlam)[1:10]
+plotlabels <- c("Intercept",names(train[1:9]))
+print(paste("Variable: Intercept =",cv.ridge_reg.coef[1]))
+print(paste("Variable:", names(train),"=",cv.ridge_reg.coef[2:9]))
+par(mar=c(10,4,2,1))
+barplot(cv.ridge_reg.coef, main="Model 1 Coefficients",ylab="Coefficients",las=2, cex=.75, cex.lab=.75, cex.main=1.25, cex.sub=.75, cex.axis=.75, las=2, names = plotlabels, col="#ffa3a2")
+```
+
+## RMSA & R-Squared
+
+```{r}
+SSE <- sum((ridge.pred - Y)^2)
+SSR <- sum((Y - sum(Y)/nrow(Y))^2)
+SST = SSR + SSE
+R_square <- SSR / SST
+Ridge_RMSE = sqrt(SSE/nrow(Y))
+print(paste("Ridge R-square =", R_square))
+print(paste("Ridge Regression RMSE =", Ridge_RMSE))
+
+```
+
+
+
+```{r}
+cv.ridge <- cv.glmnet(X_train, Y_train, alpha = 0, lambda = lambda, nfolds = 5, relax=F)
+plot(cv.ridge)
+cv.ridge.pred <- predict(cv.ridge_reg, lambda = bestlam, nfolds =5, newx = X_cv)
+plot(cv.ridge.pred)
+```
+
+
+```{r}
+cv.ridge.coef <- predict(cv.ridge_reg, type = "coefficients", 
+lambda = bestlam)[1:10,]
+print(paste("Variable: Intercept =", cv.ridge.coef[1]))
+print(paste("Variable:", names(train), "=", 
+cv.ridge.coef[2:10]))
+```
+
+
+```{r}
+library(caret)
+V = varImp(ridge_reg, lambda = 0.06123917, scale = TRUE)
+#Remove insignificant Overall importance values.
+#Insignificant values < median value.
+#Transform from numerical to logical.
+V_log <- V > median(V$Overall) 
+V1_log <- V_log==TRUE
+#Transform to (0,1).
+V2 = V1_log-FALSE
+#Transform to numerical with insignificant = 0.
+V3 = V*V2
+#Convert to data frame.
+V4 <- as.data.frame(V3)
+#Remove rows containing 0 overall values.
+V5 <- V4[!(V4$Overall == 0),]
+#Convert to data frame.
+V5 <- as.data.frame(V5)
+#Insert new column.
+s <- nrow(V5)
+new <- seq(s)
+#Rename new column.
+V5$Variables <- new
+#Rename "V5" column to "Overall".
+names(V5)[1] <- paste('Overall')
+#Count variable reduction.
+nrow(V)
+nrow(V)-nrow(V5)
+```
+
+```{r}
+my_ggp <- ggplot2::ggplot(V, 
+aes(x = reorder(rownames(V), Overall), y = Overall)) +
+  geom_point(aes(color = (factor(rownames(V)))), 
+size = 5, alpha = 0.6) +
+  geom_segment(aes(x = rownames(V), y = 0, 
+xend = rownames(V), 
+yend = Overall), color = 'skyblue', size = 1.5) +
+  ggtitle("Variable Importance using Ridge Regression") +
+  guides(color=guide_legend(title = "Important Variables")) +
+  xlab('') +  ylab('Overall Importance') + coord_flip()
+
+my_ggp + theme_light() + 
+  theme(axis.title = element_text(size = 14))  +
+  theme(axis.text = element_text(size = 12)) +
+  theme(plot.title = element_text(size = 14)) +
+  theme(legend.title = element_text(size = 13)) +
+  theme(legend.text = element_text(size = 11)) 
+```
+
+```{r}
+var_names<-c("intercept", "RSO_Density", "RSO_Weight", "RSO_Visibility", "RSO_MRP", "Orbit_Establishment_Year", "Orbit_Height", "Stealth_Type", "RSO_Type","NA")
+cbind(var_names,V)
+
+```
+
+
+```{r}
+cv.ridge.coef <- predict(cv.ridge_reg, type = "coefficients", 
+lambda = bestlam)[1:10,]
+print(paste("Variable: Intercept =", cv.ridge.coef[1]))
+print(paste("Variable:", names(train), "=", 
+cv.ridge.coef[2:10]))
+par(mar=c(10,4,2,1))
+barplot(cv.ridge.coef[2:10], main = "Model 2 Coefficients", ylab = "Coefficients", las = 2, col = "dodgerblue")
+```
+
+```{r}
+library(caTools)
+library(ggplot2)
+```
+##  Load & Transform Data
+
+### Load the Data
+
+```{r}
+library(glmnet)
+train <- read.csv("C:\\Users\\jeff\\Documents\\Data\\survive2.csv")
+```
+
+### Standardize the Data
+
+```{r}
+train$RSO_Weight <- (train$RSO_Weight - mean(train$RSO_Weight))/sd(train$RSO_Weight)
+train$RSO_Density <- (train$RSO_Density - mean(train$RSO_Density))/sd(train$RSO_Density)
+train$RSO_Visibility <- (train$RSO_Visibility - mean(train$RSO_Visibility))/sd(train$RSO_Visibility)
+train$RSO_MRP <- (train$RSO_MRP - mean(train$RSO_MRP))/sd(train$RSO_MRP)
+train$Orbit_Establishment_Year <- (train$Orbit_Establishment_Year - mean(train$Orbit_Establishment_Year))/sd(train$Orbit_Establishment_Year)
+train$Orbit_Height <- (train$Orbit_Height - mean(train$Orbit_Height))/sd(train$Orbit_Height)
+train$Stealth_Type <- (train$Stealth_Type - mean(train$Stealth_Type))/sd(train$Stealth_Type)
+train$RSO_Type <- (train$RSO_Type - mean(train$RSO_Type))/sd(train$RSO_Type)
+train$Survivability <- (train$Survivability - mean(train$Survivability))/sd(train$Survivability)
+#summary(train)
+```
+
+### Set X and Y
+
+```{r}
+Y <- train['Survivability']
+X <- train[2:9]
+#X <- model.matrix(Survivability ~., train)
+head(Y,10)
+head(X,10)
+```
+
+Train - CV Split
+
+```{r}
+set.seed(567)
+
+part <- sample(2, nrow(train), replace = TRUE, prob = c(0.7, 0.3))
+X_train<- X[part == 1,]
+X_cv<- X[part == 2,]
+
+Y_train<- Y[part == 1,]
+Y_cv<- Y[part == 2,]
+```
+
+The problem statement is that the candidate with level 6.5 had a previous salary of 160000. In order to hire the candidate for a new role, the company would like to confirm if he is being honest about his last salary so it can make a hiring decision. In order to do this, we will make use of Polynomial Linear Regression to predict the accurate salary of the employee.
+
+## Apply Linear Regression to the dataset
+
+```{r}
+train_XY <- cbind(Y,X)
+linear <- lm(formula <- Survivability ~ ., train_XY)
+summary(linear)
+```
+
+The lm() function used to create a Linear Regression model. If you look at the data set, we have one dependent variable salary and one independent variable Level. Therefore, the notation formula <- Salary ~ . means that the salary is proportional to Level. Now, the second argument takes the data set on which you want to train your regression model. After running this above code your regression model will ready. If you check the summary of the regression model then you can see the stars and P-value doesn’t much statistically significant.
+
+## Apply Polynomial Regression to the dataset
+
+```{r}
+train_XY <- cbind(Y,X)
+train_XY$Stealth_Type1 <- train_XY$Stealth_Type
+train_XY$Stealth_Type2 <- train_XY$Stealth_Type^2
+train_XY$Stealth_Type3 <- train_XY$Stealth_Type^3
+train_XY$Stealth_Type4 <- train_XY$Stealth_Type^4
+train_XY$RSO_MRP1 <- train_XY$RSO_MRP
+train_XY$RSO_MRP2 <- train_XY$RSO_MRP^2
+train_XY$RSO_MRP3 <- train_XY$RSO_MRP^3
+train_XY$RSO_MRP4 <- train_XY$RSO_MRP^4
+train_XY$Year1 <- train_XY$Orbit_Establishment_Year
+train_XY$Year2 <- train_XY$Orbit_Establishment_Year^2
+train_XY$Year3 <- train_XY$Orbit_Establishment_Year^3
+train_XY$Year4 <- train_XY$Orbit_Establishment_Year^4
+polynomial <- lm(formula <- Survivability ~ ., data = train_XY)
+summary(polynomial)
+```
+
+Now, using the lm() function creates a Polynomial Linear Regression model. The accuracy of Polynomial Linear regression increases with the increase in the degree of the Polynomial. Compare the summary of the both Linear and Polynomial regression model and notice the difference.
+
+## Visualize the Linear Regression results
+
+```{r}
+ggplot() +
+geom_point(aes(x=train_XY$RSO_MRP2, y=train_XY$Survivability), colour = 'red') +
+geom_line(aes(x <- train_XY$RSO_MRP2, y <- predict(linear, train_XY)), colour = 'blue') +
+ggtitle('Linear Regression') +
+xlab('RSO_MRP^2') +
+ylab('Survivability')
+```
+
+The Linear Regression model represents the blue straight line doesn’t fit well on the data because for some observation points the prediction is pretty far from the real observation.
+
+## Visualize the Polynomial Regression results
+
+```{r}
+ggplot() +
+geom_point(aes(x = train_XY$RSO_MRP, y = train_XY$Survivability), colour = 'red') +
+geom_line(aes(x = train_XY$RSO_MRP, y = predict(polynomial, train_XY)), colour = 'blue') +
+ggtitle('Polynomial Regression') +
+xlab('RSO_MRP') +
+ylab('Survivability')
+```
+
+The Polynomial Linear Regression model represents the blue curve that fits well on the data because all the prediction very close to the real values.
+
+## Visualize the Regression Model results for higher resolution and smoother curve
+
+```{r}
+polynomial <- lm(formula <- Survivability ~ Stealth_Type, data = train_XY)
+summary(polynomial)
+x_grid = seq(min(train_XY$Stealth_Type), max(train_XY$Stealth_Type), 0.1)
+ggplot() +
+geom_point(aes(x=train_XY$Stealth_Type, y=train_XY$Survivability), colour = 'red') +
+geom_line(aes(x=x_grid, y=predict(polynomial, data.frame(Stealth_Type = x_grid,                                             Stealth_Type2 = x_grid^2,                                          Stealth_Type3 = x_grid^3,                                          Stealth_Type4 = x_grid^4))),colour = 'blue') +
+ggtitle('Polynomial Regression') +
+xlab('Stealth_Type') +
+ylab('Survivability')
+```
+
+When you increase the degree of the Polynomial, it gives a higher resolution, smoother curve, and higher accuracy.
+
+## Predicting a new result with Linear Regression
+
+```{r}
+predict(linear, data.frame(Stealth_Type <- 6.5))
+```
+
+This code predicts the salary associated with 6.5 level according to a Linear Regression Model but, it gives us the pretty far prediction to 160 k so it’s not an accurate prediction.
+
+### Predicting a new result with Polynomial Regression
+
+```{r}
+predict(polynomial, data.frame(Stealth_Type <- 0.2129,
+                             Stealth_Type2 <- 0.2129^2,
+                             Stealth_Type3 <- 0.2129^3,
+                             Stealth_Type4 <- 0.2129^4))
+```
+
+This code predicts the salary associated with 6.5 level according to a Polynomial Regression Model. And gives us a very close prediction to 160 k.
+
+The code is available on my GitHub account.
+
+The previous part of the series part1 and part2 covered the Linear Regression and Multiple Linear Regression.
+
+```{r}
+lm_fit = lm(Survivability ~ poly(Stealth_Type, 4), data = 
+train_XY)
+pred <- predict(lm_fit)
+rmserr(pred, lm_fit$fitted.values)
+```
+
